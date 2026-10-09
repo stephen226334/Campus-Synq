@@ -1,0 +1,148 @@
+/**
+ * Campus Synq — Master Unified Development Runner
+ * Concurrently boots both Backend (Port 5000) and Frontend (Port 5173)
+ * with unified log output, MongoDB connectivity check, and auto-browser launch.
+ */
+
+const { spawn, exec } = require('child_process');
+const path = require('path');
+const net = require('net');
+
+const ROOT_DIR = __dirname;
+const BACKEND_DIR = path.join(ROOT_DIR, 'backend');
+const FRONTEND_DIR = path.join(ROOT_DIR, 'frontend');
+
+const COLORS = {
+  reset: '\x1b[0m',
+  cyan: '\x1b[36m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  purple: '\x1b[35m',
+  red: '\x1b[31m',
+  bold: '\x1b[1m'
+};
+
+function log(prefix, color, message) {
+  const lines = message.toString().split('\n');
+  lines.forEach((line) => {
+    if (line.trim()) {
+      console.log(`${color}${prefix}${COLORS.reset} ${line}`);
+    }
+  });
+}
+
+function checkPort(port, host = '127.0.0.1', timeout = 1000) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let isConnected = false;
+
+    socket.setTimeout(timeout);
+    socket.once('connect', () => {
+      isConnected = true;
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once('timeout', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.once('error', () => {
+      resolve(false);
+    });
+    socket.connect(port, host);
+  });
+}
+
+function openBrowser(url) {
+  const startCmd =
+    process.platform === 'win32'
+      ? `start "" "${url}"`
+      : process.platform === 'darwin'
+      ? `open "${url}"`
+      : `xdg-open "${url}"`;
+
+  exec(startCmd, () => {});
+}
+
+async function main() {
+  console.log(`\n${COLORS.bold}${COLORS.purple}==============================================================${COLORS.reset}`);
+  console.log(`${COLORS.bold}${COLORS.purple}           CAMPUS SYNQ — SYSTEM RUNNER (PHASE 1)              ${COLORS.reset}`);
+  console.log(`${COLORS.bold}${COLORS.purple}==============================================================${COLORS.reset}\n`);
+
+  // 1. Verify MongoDB Availability
+  process.stdout.write(`${COLORS.cyan}Checking local MongoDB on 127.0.0.1:27017... ${COLORS.reset}`);
+  const mongoOnline = await checkPort(27017, '127.0.0.1');
+
+  if (mongoOnline) {
+    console.log(`${COLORS.green}CONNECTED${COLORS.reset}`);
+  } else {
+    console.log(`${COLORS.yellow}NOT DETECTED${COLORS.reset}`);
+    console.log(
+      `${COLORS.yellow}Warning: Local MongoDB on port 27017 did not respond.\n` +
+      `Please ensure MongoDB service is started (e.g. 'net start MongoDB' or mongod).${COLORS.reset}\n`
+    );
+  }
+
+  console.log(`${COLORS.cyan}Launching services...${COLORS.reset}\n`);
+
+  // 2. Launch Backend Server
+  const backend = spawn('node', ['src/server.js'], {
+    cwd: BACKEND_DIR,
+    shell: true,
+    stdio: ['inherit', 'pipe', 'pipe']
+  });
+
+  backend.stdout.on('data', (d) => log('[BACKEND] ', COLORS.purple, d));
+  backend.stderr.on('data', (d) => log('[BACKEND-ERR] ', COLORS.red, d));
+
+  // 3. Launch Frontend Dev Server
+  const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  const frontend = spawn(npmCmd, ['run', 'dev'], {
+    cwd: FRONTEND_DIR,
+    shell: true,
+    stdio: ['inherit', 'pipe', 'pipe']
+  });
+
+  frontend.stdout.on('data', (d) => log('[FRONTEND]', COLORS.cyan, d));
+  frontend.stderr.on('data', (d) => log('[FRONTEND-ERR]', COLORS.red, d));
+
+  // 4. Print Active Endpoints Banner
+  setTimeout(() => {
+    console.log(`\n${COLORS.bold}${COLORS.green}==============================================================${COLORS.reset}`);
+    console.log(`${COLORS.bold}${COLORS.green}   CAMPUS SYNQ PORTAL IS RUNNING SUCCESSFULLY!                ${COLORS.reset}`);
+    console.log(`${COLORS.bold}${COLORS.green}==============================================================${COLORS.reset}`);
+    console.log(`  ${COLORS.bold}Frontend Portal:${COLORS.reset}  http://localhost:5173`);
+    console.log(`  ${COLORS.bold}Backend API:${COLORS.reset}      http://localhost:5000/api/v1`);
+    console.log(`  ${COLORS.bold}Health Check:${COLORS.reset}     http://localhost:5000/api/v1/health`);
+    console.log(`${COLORS.bold}${COLORS.green}==============================================================${COLORS.reset}`);
+    console.log(`  Press ${COLORS.yellow}Ctrl + C${COLORS.reset} in this terminal to stop both servers.\n`);
+
+    // Auto open browser after frontend server is ready
+    openBrowser('http://localhost:5173');
+  }, 2500);
+
+  // 5. Clean Termination Handler
+  const cleanup = () => {
+    console.log(`\n${COLORS.yellow}Shutting down Campus Synq services...${COLORS.reset}`);
+    try {
+      if (process.platform === 'win32') {
+        if (backend.pid) exec(`taskkill /pid ${backend.pid} /T /F`, () => {});
+        if (frontend.pid) exec(`taskkill /pid ${frontend.pid} /T /F`, () => {});
+      } else {
+        backend.kill('SIGINT');
+        frontend.kill('SIGINT');
+      }
+    } catch {
+      // Ignore cleanup errors
+    }
+    process.exit(0);
+  };
+
+  process.on('SIGINT', cleanup);
+  process.on('SIGTERM', cleanup);
+}
+
+main().catch((err) => {
+  console.error('Failed to run project:', err);
+  process.exit(1);
+});
