@@ -10,5 +10,13 @@ yarn-error.log*
 .DS_Store
 *.log
 temp_chrome_data/
+.env
 .env.*
+.env.local
+**/.env
+**/.env.*
+**/.env.local
 !.env.example
+!**/.env.example
+.vscode/
+.idea/
