@@ -61,9 +61,14 @@ export const DeanTimetablePage = () => {
     fetchTimetable();
   }, [selectedDay, selectedSemester, selectedSection, selectedFaculty]);
 
+  const handleRealtimeSync = useCallback(() => {
+    fetchTimetable();
+  }, [fetchTimetable]);
+
   // Real-time Event Listener for instant timetable refresh with auto-reconnection and stale data reload
-  useRealtimeEvents(() => fetchTimetable(), {
-    onReconnect: () => fetchTimetable()
+  useRealtimeEvents(handleRealtimeSync, {
+    endpoint: '/api/v1/dean/events',
+    onReconnect: handleRealtimeSync
   });
 
   return (

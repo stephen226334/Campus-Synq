@@ -101,9 +101,14 @@ export const DeanDashboardPage = () => {
     fetchDashboard();
   }, [refreshKey]);
 
+  const handleRealtimeSync = useCallback(() => {
+    fetchDashboard();
+  }, []);
+
   // Real-time updates via Server-Sent Events (SSE) with auto-reconnection and stale data reload
-  useRealtimeEvents(() => fetchDashboard(), {
-    onReconnect: () => fetchDashboard()
+  useRealtimeEvents(handleRealtimeSync, {
+    endpoint: '/api/v1/dean/events',
+    onReconnect: handleRealtimeSync
   });
 
   // Format 12-hour time without seconds: "10:35 AM"

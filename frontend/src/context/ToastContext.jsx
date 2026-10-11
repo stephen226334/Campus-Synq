@@ -11,15 +11,24 @@ const DEFAULT_DURATIONS = {
   loading: 0 // Remains until manually dismissed or replaced
 };
 
+const MAX_VISIBLE_TOASTS = 3;
+
 export const ToastProvider = ({ children }) => {
   const [toasts, setToasts] = useState([]);
   const recentToastsRef = useRef(new Map());
+  const toastTimersRef = useRef(new Map());
 
   const removeToast = useCallback((id) => {
+    if (toastTimersRef.current.has(id)) {
+      clearTimeout(toastTimersRef.current.get(id));
+      toastTimersRef.current.delete(id);
+    }
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
   const clearAll = useCallback(() => {
+    toastTimersRef.current.forEach((timer) => clearTimeout(timer));
+    toastTimersRef.current.clear();
     setToasts([]);
     recentToastsRef.current.clear();
   }, []);
@@ -65,12 +74,29 @@ export const ToastProvider = ({ children }) => {
         id: customId
       } = toastConfig;
 
-      // De-duplication check: Prevent identical notifications within a 3-second window
-      const dedupKey = `${type}:${title}:${message}`;
+      // De-duplication check: Prevent identical notifications within a 3.5-second window
+      const dedupKey = customId ? `id:${customId}` : `${type}:${title}:${message}`;
       const now = Date.now();
       const lastSeen = recentToastsRef.current.get(dedupKey);
 
-      if (lastSeen && now - lastSeen < 3000 && !customId) {
+      if (lastSeen && now - lastSeen.timestamp < 3500) {
+        // If it's a custom ID that is currently rendered, refresh its timer and data
+        if (customId) {
+          setToasts((prev) =>
+            prev.map((t) =>
+              t.id === customId ? { id: customId, title, message, recommendation, type, dataSaved } : t
+            )
+          );
+          if (duration > 0) {
+            if (toastTimersRef.current.has(customId)) {
+              clearTimeout(toastTimersRef.current.get(customId));
+            }
+            const timer = setTimeout(() => {
+              removeToast(customId);
+            }, duration);
+            toastTimersRef.current.set(customId, timer);
+          }
+        }
         return lastSeen.id;
       }
 
@@ -78,29 +104,35 @@ export const ToastProvider = ({ children }) => {
       recentToastsRef.current.set(dedupKey, { timestamp: now, id });
 
       // Clean up old entries from deduplication map
-      if (recentToastsRef.current.size > 20) {
+      if (recentToastsRef.current.size > 30) {
         for (const [k, v] of recentToastsRef.current.entries()) {
-          if (now - v.timestamp > 10000) {
+          if (now - v.timestamp > 12000) {
             recentToastsRef.current.delete(k);
           }
         }
       }
 
       setToasts((prev) => {
-        // If updating an existing toast by id (e.g. converting loading to success)
+        // If updating an existing toast by id (e.g. converting loading to success or updating status)
         const exists = prev.some((t) => t.id === id);
         if (exists) {
           return prev.map((t) =>
             t.id === id ? { id, title, message, recommendation, type, dataSaved } : t
           );
         }
-        return [...prev, { id, title, message, recommendation, type, dataSaved }];
+        // Limit to max 3 most recent visible toasts to prevent dashboard clutter
+        const nextList = [...prev, { id, title, message, recommendation, type, dataSaved }];
+        return nextList.slice(-MAX_VISIBLE_TOASTS);
       });
 
       if (duration > 0) {
-        setTimeout(() => {
+        if (toastTimersRef.current.has(id)) {
+          clearTimeout(toastTimersRef.current.get(id));
+        }
+        const timer = setTimeout(() => {
           removeToast(id);
         }, duration);
+        toastTimersRef.current.set(id, timer);
       }
 
       return id;

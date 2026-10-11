@@ -5,7 +5,7 @@ import { useToast } from '../context/ToastContext';
 /**
  * Enhanced Real-Time Academic Events (SSE) hook
  * Features connection monitoring, exponential backoff reconnection,
- * non-blocking notifications, and stale-data refresh callbacks.
+ * deduplicated notifications, stable callbacks, and stale-data refresh.
  */
 export const useRealtimeEvents = (onEventReceived, options = {}) => {
   const { token, isAuthenticated, isFaculty, isDean } = useAuth();
@@ -14,12 +14,20 @@ export const useRealtimeEvents = (onEventReceived, options = {}) => {
   const eventSourceRef = useRef(null);
   const retryTimeoutRef = useRef(null);
   const retryCountRef = useRef(0);
-  const wasConnectedRef = useRef(false);
+  const hasEverConnectedRef = useRef(false);
+  const isDisconnectedRef = useRef(false);
   const isManuallyClosedRef = useRef(false);
 
-  const maxRetries = options.maxRetries || 8;
-  const onReconnect = options.onReconnect;
+  // Store callbacks in refs to prevent unstable dependency re-creation
+  const onEventReceivedRef = useRef(onEventReceived);
+  const onReconnectRef = useRef(options.onReconnect);
 
+  useEffect(() => {
+    onEventReceivedRef.current = onEventReceived;
+    onReconnectRef.current = options.onReconnect;
+  });
+
+  const maxRetries = options.maxRetries || 8;
   // Determine appropriate SSE endpoint based on role or explicit option
   const endpoint = options.endpoint || (isDean ? '/api/v1/dean/events' : '/api/v1/faculty/events');
 
@@ -32,7 +40,7 @@ export const useRealtimeEvents = (onEventReceived, options = {}) => {
       return;
     }
 
-    // Clean up any existing connection
+    // Clean up any existing connection before opening a new one
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
@@ -47,22 +55,28 @@ export const useRealtimeEvents = (onEventReceived, options = {}) => {
 
       es.onopen = () => {
         retryCountRef.current = 0;
-        if (wasConnectedRef.current) {
+
+        // Only display "Restored" notification if we transitioned from an actual disconnected state
+        if (isDisconnectedRef.current) {
+          isDisconnectedRef.current = false;
           showSuccess('Live updates restored.', {
+            id: 'sse-connection-restored',
             title: 'Live Connection Restored',
             recommendation: 'Academic schedule is synchronized in real-time.',
             duration: 3500
           });
+
           // Trigger refresh of stale dashboard/timetable data
-          if (onReconnect) {
+          if (onReconnectRef.current) {
             try {
-              onReconnect();
+              onReconnectRef.current();
             } catch (err) {
               console.warn('[SSE] Error during onReconnect callback:', err);
             }
           }
         }
-        wasConnectedRef.current = true;
+
+        hasEverConnectedRef.current = true;
       };
 
       es.addEventListener('connected', () => {
@@ -74,8 +88,8 @@ export const useRealtimeEvents = (onEventReceived, options = {}) => {
         es.addEventListener(eventName, (event) => {
           try {
             const payload = JSON.parse(event.data);
-            if (onEventReceived) {
-              onEventReceived(callbackType, payload);
+            if (onEventReceivedRef.current) {
+              onEventReceivedRef.current(callbackType, payload);
             }
           } catch (err) {
             console.error(`[SSE] Failed to parse ${eventName} payload:`, err);
@@ -97,8 +111,11 @@ export const useRealtimeEvents = (onEventReceived, options = {}) => {
           return;
         }
 
-        if (wasConnectedRef.current && retryCountRef.current === 0) {
+        // Only notify on the first failure of an established connection
+        if (hasEverConnectedRef.current && !isDisconnectedRef.current) {
+          isDisconnectedRef.current = true;
           showWarning('Live updates disconnected. Reconnecting...', {
+            id: 'sse-connection-status',
             title: 'Real-Time Disconnected',
             recommendation: 'Reconnection in progress. Schedule changes will sync automatically.',
             duration: 4500
@@ -110,6 +127,10 @@ export const useRealtimeEvents = (onEventReceived, options = {}) => {
           const backoffDelay = Math.min(1000 * Math.pow(1.5, retryCountRef.current), 15000);
           retryCountRef.current += 1;
 
+          if (retryTimeoutRef.current) {
+            clearTimeout(retryTimeoutRef.current);
+          }
+
           retryTimeoutRef.current = setTimeout(() => {
             connect();
           }, backoffDelay);
@@ -120,7 +141,7 @@ export const useRealtimeEvents = (onEventReceived, options = {}) => {
     } catch (err) {
       console.error('[SSE] Failed to initialize EventSource:', err);
     }
-  }, [isAuthenticated, token, isFaculty, isDean, endpoint, maxRetries, onReconnect, onEventReceived, showWarning, showSuccess]);
+  }, [isAuthenticated, token, isFaculty, isDean, endpoint, maxRetries, showWarning, showSuccess]);
 
   useEffect(() => {
     isManuallyClosedRef.current = false;

@@ -76,27 +76,31 @@ export const DeanRoomSearchPage = ({ onInspectEntity }) => {
 
       {/* Filter Form */}
       <div className="dp-search-form-card">
-        <form onSubmit={handleSubmit} className="dp-room-search-grid">
-          <div className="dp-form-field">
-            <label htmlFor="room-select">Room</label>
+        <form onSubmit={handleSubmit} className="dp-room-search-grid" noValidate={false}>
+          {/* 1. Room Selection Column (40%) */}
+          <div className="dp-form-field dp-room-field">
+            <label htmlFor="room-select" className="dp-form-label">Room</label>
             <div className="dp-form-input-wrapper">
-              <DoorOpen size={16} className="dp-form-icon" />
+              <DoorOpen size={18} className="dp-form-icon" />
               <input
                 id="room-select"
                 type="text"
                 value={room}
                 onChange={(e) => setRoom(e.target.value)}
                 placeholder="e.g. B314, CS-101"
+                className="dp-room-input"
                 required
+                autoComplete="off"
               />
             </div>
-            <div className="dp-quick-tags">
+            <div className="dp-quick-tags" aria-label="Suggested Rooms">
               {commonRooms.map((r) => (
                 <button
                   type="button"
                   key={r}
                   className={`dp-quick-tag ${room === r ? 'active' : ''}`}
                   onClick={() => setRoom(r)}
+                  aria-pressed={room === r}
                 >
                   {r}
                 </button>
@@ -104,14 +108,16 @@ export const DeanRoomSearchPage = ({ onInspectEntity }) => {
             </div>
           </div>
 
-          <div className="dp-form-field">
-            <label htmlFor="day-select">Day</label>
+          {/* 2. Day Selection Column (30%) */}
+          <div className="dp-form-field dp-day-field">
+            <label htmlFor="day-select" className="dp-form-label">Day</label>
             <div className="dp-form-input-wrapper">
-              <Calendar size={16} className="dp-form-icon" />
+              <Calendar size={18} className="dp-form-icon" />
               <select
                 id="day-select"
                 value={day}
                 onChange={(e) => setDay(e.target.value)}
+                className="dp-day-select"
               >
                 {daysList.map((d) => (
                   <option key={d} value={d}>{d}</option>
@@ -120,15 +126,17 @@ export const DeanRoomSearchPage = ({ onInspectEntity }) => {
             </div>
           </div>
 
-          <div className="dp-form-field dp-form-actions">
-            <label>&nbsp;</label>
+          {/* 3. Action Button Column (30%) */}
+          <div className="dp-form-field dp-action-field">
+            <label className="dp-form-label dp-label-spacer" aria-hidden="true">&nbsp;</label>
             <button
               type="submit"
-              className="dp-btn-primary dp-btn-search"
+              className="dp-btn-view-timetable"
               disabled={loading}
+              aria-label="View Room Timetable"
             >
-              <Search size={16} />
-              <span>{loading ? 'Loading...' : 'View Timetable'}</span>
+              <Search size={18} className="dp-btn-search-icon" />
+              <span className="dp-btn-search-text">{loading ? 'Loading...' : 'View Timetable'}</span>
             </button>
           </div>
         </form>

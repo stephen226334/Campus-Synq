@@ -2205,7 +2205,6 @@
 }
 
 .dp-class-search-grid,
-.dp-room-search-grid,
 .dp-faculty-search-grid,
 .dp-free-rooms-grid {
   display: grid;
@@ -2216,10 +2215,153 @@
 
 @media (max-width: 900px) {
   .dp-class-search-grid,
-  .dp-room-search-grid,
   .dp-faculty-search-grid,
   .dp-free-rooms-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ==========================================================================
+   ROOM SEARCH (Mode 2) — Dedicated 3-Column Responsive Layout
+   Proportions: Room (40%), Day (30%), View Timetable Button (30%)
+   ========================================================================== */
+.dp-room-search-grid {
+  display: grid;
+  grid-template-columns: 4fr 3fr 3fr;
+  gap: 20px;
+  align-items: start;
+  width: 100%;
+}
+
+.dp-room-search-grid .dp-form-field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dp-room-search-grid .dp-form-label {
+  display: block;
+  font-size: 0.775rem;
+  font-weight: 700;
+  color: var(--dp-secondary, #64748b);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+  height: 16px;
+  line-height: 16px;
+}
+
+.dp-room-search-grid .dp-label-spacer {
+  visibility: hidden;
+}
+
+.dp-room-search-grid .dp-form-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 46px;
+}
+
+.dp-room-search-grid .dp-form-input-wrapper input,
+.dp-room-search-grid .dp-form-input-wrapper select {
+  width: 100%;
+  height: 46px;
+  padding: 0 14px 0 42px;
+  border: 1px solid var(--dp-border);
+  border-radius: 8px;
+  background: var(--dp-surface);
+  color: var(--dp-text);
+  font-size: 0.9rem;
+  font-family: inherit;
+  outline: none;
+  box-sizing: border-box;
+  transition: all 0.15s ease;
+}
+
+.dp-room-search-grid .dp-form-input-wrapper input:focus,
+.dp-room-search-grid .dp-form-input-wrapper select:focus {
+  border-color: var(--dp-primary, #7c3aed);
+  background: var(--dp-card);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.15);
+}
+
+.dp-room-search-grid .dp-form-icon {
+  position: absolute;
+  left: 14px;
+  color: var(--dp-muted, #94a3b8);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dp-btn-view-timetable {
+  width: 100%;
+  height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 20px;
+  background-color: var(--dp-primary, #7c3aed);
+  color: #ffffff;
+  font-size: 0.925rem;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  box-sizing: border-box;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  outline: none;
+}
+
+.dp-btn-view-timetable:hover:not(:disabled) {
+  background-color: var(--dp-primary-dark, #6d28d9);
+  box-shadow: 0 4px 6px -1px rgba(124, 58, 237, 0.25);
+  transform: translateY(-1px);
+}
+
+.dp-btn-view-timetable:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.dp-btn-view-timetable:focus-visible {
+  outline: 2px solid var(--dp-primary, #7c3aed);
+  outline-offset: 2px;
+}
+
+.dp-btn-view-timetable:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.dp-btn-view-timetable .dp-btn-search-icon {
+  flex-shrink: 0;
+}
+
+.dp-btn-view-timetable .dp-btn-search-text {
+  letter-spacing: 0.01em;
+}
+
+@media (max-width: 1024px) {
+  .dp-room-search-grid {
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  .dp-room-search-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .dp-room-search-grid .dp-label-spacer {
+    display: none;
   }
 }
 

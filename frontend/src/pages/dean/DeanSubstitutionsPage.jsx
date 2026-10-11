@@ -54,9 +54,14 @@ export const DeanSubstitutionsPage = () => {
     fetchSubstitutions();
   }, [statusFilter, refreshKey]);
 
+  const handleRealtimeSync = useCallback(() => {
+    fetchSubstitutions();
+  }, []);
+
   // Real-time Event Listener for instant update with auto-reconnection and stale data reload
-  useRealtimeEvents(() => fetchSubstitutions(), {
-    onReconnect: () => fetchSubstitutions()
+  useRealtimeEvents(handleRealtimeSync, {
+    endpoint: '/api/v1/dean/events',
+    onReconnect: handleRealtimeSync
   });
 
   return (
