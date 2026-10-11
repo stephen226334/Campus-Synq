@@ -142,7 +142,7 @@ export const DeanSidebar = ({ mobileOpen, onCloseMobile }) => {
               {(user?.fullName || 'D')[0].toUpperCase()}
             </div>
             <div className="dp-header-user-meta">
-              <span className="dp-header-user-name">{user?.fullName || 'Prof. Robert Vance'}</span>
+              <span className="dp-header-user-name">{user?.fullName || 'Dr. R Kumar'}</span>
               <span className="dp-header-user-role">Dean / HOD</span>
             </div>
           </NavLink>

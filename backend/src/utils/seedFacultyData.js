@@ -451,7 +451,7 @@ const seedFacultyPortalData = async () => {
     let dean = await Admin.findOne({ email: 'dean@campussynq.com' });
     if (!dean) {
       dean = new Admin({
-        fullName: 'Prof. Robert Vance (Dean)',
+        fullName: 'Dr. R Kumar',
         email: 'dean@campussynq.com',
         password: 'Password123',
         role: 'DEAN',
@@ -461,6 +461,7 @@ const seedFacultyPortalData = async () => {
       await dean.save();
       console.log('Seeded official Dean account: dean@campussynq.com');
     } else {
+      dean.fullName = 'Dr. R Kumar';
       dean.role = 'DEAN';
       dean.password = 'Password123';
       dean.status = 'ACTIVE';

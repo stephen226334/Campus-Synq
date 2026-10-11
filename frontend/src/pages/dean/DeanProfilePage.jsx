@@ -48,7 +48,7 @@ export const DeanProfilePage = () => {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
               <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--dp-text)', margin: 0 }}>
-                {user?.fullName || 'Prof. Robert Vance (Dean)'}
+                {user?.fullName || 'Dr. R Kumar'}
               </h2>
               <span className="dp-badge-portal">DEAN / HOD</span>
             </div>
