@@ -15,6 +15,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import deanApi from '../../api/dean';
+import useRealtimeEvents from '../../hooks/useRealtimeEvents';
 import { formatAcademicSection, formatAcademicStatus } from '../../utils/academicFormatter';
 
 export const DeanSubstitutionsPage = () => {
@@ -53,20 +54,10 @@ export const DeanSubstitutionsPage = () => {
     fetchSubstitutions();
   }, [statusFilter, refreshKey]);
 
-  // Real-time Event Listener for instant update
-  useEffect(() => {
-    const token = localStorage.getItem('campus_synq_token');
-    const apiOrigin = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : '';
-    const eventSource = new EventSource(`${apiOrigin}/api/v1/dean/events?token=${token || ''}`);
-
-    eventSource.addEventListener('substitution_updated', () => {
-      fetchSubstitutions();
-    });
-
-    return () => {
-      eventSource.close();
-    };
-  }, [statusFilter]);
+  // Real-time Event Listener for instant update with auto-reconnection and stale data reload
+  useRealtimeEvents(() => fetchSubstitutions(), {
+    onReconnect: () => fetchSubstitutions()
+  });
 
   return (
     <div>

@@ -64,7 +64,7 @@ export const TimetablePage = () => {
   const [deletingItem, setDeletingItem] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const { showToast } = useToast();
+  const { showToast, showError, showSuccess } = useToast();
 
   const loadAllMasterData = async () => {
     try {
@@ -89,6 +89,7 @@ export const TimetablePage = () => {
       if (auds?.data) setAuditoriumsList(auds.data);
     } catch (err) {
       console.error('Failed to load master data for timetable:', err);
+      showError(err, { title: 'Failed to Load Academic Resources' });
     }
   };
 
@@ -106,11 +107,11 @@ export const TimetablePage = () => {
         setEntries(res.data);
       }
     } catch (err) {
-      showToast(err.message || 'Failed to load timetable', 'error');
+      showError(err, { title: 'Failed to Load Timetable' });
     } finally {
       setIsLoading(false);
     }
-  }, [selectedDay, semesterFilter, sectionFilter, facultyFilter, showToast]);
+  }, [selectedDay, semesterFilter, sectionFilter, facultyFilter, showError]);
 
   useEffect(() => {
     loadAllMasterData();
@@ -178,16 +179,20 @@ export const TimetablePage = () => {
     try {
       if (editingItem) {
         await api.put(`/admin/timetable/${editingItem._id}`, formData);
-        showToast('Timetable session updated successfully', 'success');
+        showSuccess('Timetable Session Updated', {
+          message: 'The timetable session was updated successfully.'
+        });
       } else {
         await api.post('/admin/timetable', formData);
-        showToast('Timetable session scheduled successfully', 'success');
+        showSuccess('Timetable Session Scheduled', {
+          message: 'The timetable session was scheduled successfully.'
+        });
       }
       setIsModalOpen(false);
       fetchTimetable();
     } catch (err) {
       setFormErrors({ submit: err.message });
-      showToast(err.message || 'Failed to schedule timetable session', 'error');
+      showError(err, { title: editingItem ? 'Failed to Update Session' : 'Failed to Schedule Session' });
     } finally {
       setIsSubmitting(false);
     }
@@ -203,12 +208,14 @@ export const TimetablePage = () => {
     setIsDeleting(true);
     try {
       await api.delete(`/admin/timetable/${deletingItem._id}`);
-      showToast('Timetable session deleted successfully', 'success');
+      showSuccess('Timetable Session Deleted', {
+        message: 'The timetable session has been deleted.'
+      });
       setIsDeleteDialogOpen(false);
       setDeletingItem(null);
       fetchTimetable();
     } catch (err) {
-      showToast(err.message || 'Failed to delete timetable entry', 'error');
+      showError(err, { title: 'Failed to Delete Session' });
     } finally {
       setIsDeleting(false);
     }

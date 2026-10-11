@@ -1,4 +1,5 @@
 const Auditorium = require('../models/Auditorium');
+const TimetableEntry = require('../models/TimetableEntry');
 const { successResponse, errorResponse } = require('../utils/response');
 
 /**
@@ -117,6 +118,21 @@ const deleteAuditorium = async (req, res, next) => {
     const auditorium = await Auditorium.findById(req.params.id);
     if (!auditorium) {
       return errorResponse(res, 'Auditorium not found', 404);
+    }
+
+    const timetableCount = await TimetableEntry.countDocuments({ roomId: req.params.id });
+    if (timetableCount > 0) {
+      return errorResponse(
+        res,
+        `Cannot delete auditorium '${auditorium.auditoriumName}' [${auditorium.auditoriumNumber}]. It is currently assigned in ${timetableCount} timetable session(s). Please reassign or delete these sessions first.`,
+        400,
+        null,
+        {
+          code: 'REFERENTIAL_INTEGRITY_VIOLATION',
+          details: { timetableUsageCount: timetableCount },
+          recommendation: 'Reassign or remove linked timetable sessions before deleting this auditorium.'
+        }
+      );
     }
 
     await auditorium.deleteOne();

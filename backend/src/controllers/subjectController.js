@@ -1,5 +1,6 @@
 const Subject = require('../models/Subject');
 const Semester = require('../models/Semester');
+const TimetableEntry = require('../models/TimetableEntry');
 const { successResponse, errorResponse } = require('../utils/response');
 
 /**
@@ -143,6 +144,21 @@ const deleteSubject = async (req, res, next) => {
     const subject = await Subject.findById(req.params.id);
     if (!subject) {
       return errorResponse(res, 'Subject not found', 404);
+    }
+
+    const timetableCount = await TimetableEntry.countDocuments({ subject: req.params.id });
+    if (timetableCount > 0) {
+      return errorResponse(
+        res,
+        `Cannot delete subject '${subject.name}' (${subject.code}). It is currently scheduled in ${timetableCount} timetable session(s). Please reassign or delete these sessions first.`,
+        400,
+        null,
+        {
+          code: 'REFERENTIAL_INTEGRITY_VIOLATION',
+          details: { timetableUsageCount: timetableCount },
+          recommendation: 'Reassign or remove linked timetable sessions before deleting this subject.'
+        }
+      );
     }
 
     await subject.deleteOne();

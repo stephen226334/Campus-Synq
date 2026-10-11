@@ -5,8 +5,13 @@ const { CLIENT_URL, CORS_ORIGINS, NODE_ENV } = require('./config/env');
 const routes = require('./routes');
 const { errorHandler, notFoundHandler } = require('./middleware/errorMiddleware');
 const { securityHeaders, noSqlSanitizer } = require('./middleware/securityMiddleware');
+const requestCorrelation = require('./middleware/requestCorrelation');
+const dbCheckMiddleware = require('./middleware/dbCheckMiddleware');
 
 const app = express();
+
+// Request correlation ID tracking
+app.use(requestCorrelation);
 
 // Security HTTP headers & server signature hiding
 app.disable('x-powered-by');
@@ -45,7 +50,7 @@ app.use(
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-Id']
   })
 );
 
@@ -54,7 +59,7 @@ if (NODE_ENV !== 'test') {
   app.use(morgan(NODE_ENV === 'production' ? 'combined' : 'dev'));
 }
 
-// Health check endpoint
+// Health check endpoint (always accessible regardless of DB state)
 app.get('/api/v1/health', (req, res) => {
   res.status(200).json({
     status: 'online',
@@ -64,6 +69,9 @@ app.get('/api/v1/health', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+// Database connectivity check for API routes
+app.use('/api/v1', dbCheckMiddleware);
 
 // API Routes
 app.use('/api/v1', routes);

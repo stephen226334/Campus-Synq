@@ -49,7 +49,8 @@ const validateTimetableConflicts = async ({
     return {
       hasConflict: true,
       conflictType: 'FACULTY',
-      message: `${facultyName} is already assigned to teach ${subName} (${secName}) in ${roomNum} during ${periodLabel} on ${day}.`
+      message: `${facultyName} is already assigned to teach ${subName} (${secName}) in ${roomNum} during ${periodLabel} on ${day}.`,
+      recommendation: `Choose an alternative faculty instructor or schedule this lecture during a different period slot.`
     };
   }
 
@@ -72,7 +73,8 @@ const validateTimetableConflicts = async ({
     return {
       hasConflict: true,
       conflictType: 'ROOM',
-      message: `Room ${roomNum} is already allocated to ${subName} (${secName}) taught by ${facultyName} during ${periodLabel} on ${day}.`
+      message: `Room ${roomNum} is already allocated to ${subName} (${secName}) taught by ${facultyName} during ${periodLabel} on ${day}.`,
+      recommendation: `Select another available classroom or laboratory, or reschedule this session.`
     };
   }
 
@@ -94,7 +96,8 @@ const validateTimetableConflicts = async ({
     return {
       hasConflict: true,
       conflictType: 'SECTION',
-      message: `Class section is already scheduled for ${subName} (${secName}) with ${facultyName} during ${periodLabel} on ${day}.`
+      message: `Class section is already scheduled for ${subName} (${secName}) with ${facultyName} during ${periodLabel} on ${day}.`,
+      recommendation: `Cohort section cannot attend two simultaneous lectures. Select a free period slot.`
     };
   }
 

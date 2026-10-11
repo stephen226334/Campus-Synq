@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { Calendar, Filter, Clock, MapPin, Users, BookOpen, Loader2 } from 'lucide-react';
 import deanApi from '../../api/dean';
 import { formatAcademicSection, formatAcademicStatus } from '../../utils/academicFormatter';
+import useRealtimeEvents from '../../hooks/useRealtimeEvents';
 
 export const DeanTimetablePage = () => {
   const { openEntityDrawer } = useOutletContext() || {};
@@ -60,24 +61,10 @@ export const DeanTimetablePage = () => {
     fetchTimetable();
   }, [selectedDay, selectedSemester, selectedSection, selectedFaculty]);
 
-  // Real-time Event Listener for instant timetable refresh
-  useEffect(() => {
-    const token = localStorage.getItem('campus_synq_token');
-    const apiOrigin = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : '';
-    const eventSource = new EventSource(`${apiOrigin}/api/v1/dean/events?token=${token || ''}`);
-
-    eventSource.addEventListener('timetable_updated', () => {
-      fetchTimetable();
-    });
-
-    eventSource.addEventListener('substitution_updated', () => {
-      fetchTimetable();
-    });
-
-    return () => {
-      eventSource.close();
-    };
-  }, [selectedDay, selectedSemester, selectedSection, selectedFaculty]);
+  // Real-time Event Listener for instant timetable refresh with auto-reconnection and stale data reload
+  useRealtimeEvents(() => fetchTimetable(), {
+    onReconnect: () => fetchTimetable()
+  });
 
   return (
     <div>

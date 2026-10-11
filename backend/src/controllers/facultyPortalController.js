@@ -359,7 +359,12 @@ const createSubstitution = async (req, res, next) => {
         res,
         'Faculty is already assigned during this period.',
         409,
-        { conflictType: 'FACULTY' }
+        { conflictType: 'FACULTY' },
+        {
+          code: 'SUBSTITUTION_FACULTY_CONFLICT',
+          details: { conflictType: 'FACULTY', facultyName: substituteFaculty.fullName },
+          recommendation: 'Choose a different faculty member who does not have a scheduled class at this time.'
+        }
       );
     }
 
@@ -376,9 +381,14 @@ const createSubstitution = async (req, res, next) => {
       const roomNum = entry.roomDetails?.roomNumber || 'Selected room';
       return errorResponse(
         res,
-        `${roomNum} is already occupied during this period.`,
+        `Room ${roomNum} is already occupied during this period.`,
         409,
-        { conflictType: 'ROOM' }
+        { conflictType: 'ROOM' },
+        {
+          code: 'SUBSTITUTION_ROOM_CONFLICT',
+          details: { conflictType: 'ROOM', roomNumber: roomNum },
+          recommendation: 'Select an available room or reschedule the substitution for an alternate period.'
+        }
       );
     }
 
@@ -397,7 +407,12 @@ const createSubstitution = async (req, res, next) => {
         res,
         `${secName} already has another class scheduled during this period.`,
         409,
-        { conflictType: 'SECTION' }
+        { conflictType: 'SECTION' },
+        {
+          code: 'SUBSTITUTION_SECTION_CONFLICT',
+          details: { conflictType: 'SECTION', sectionName: secName },
+          recommendation: 'Check the class section schedule and pick an open slot.'
+        }
       );
     }
 

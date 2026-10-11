@@ -1,9 +1,13 @@
 /**
  * Campus Synq API Client
+ * Centralized request layer with timeout handling, correlation IDs, and normalized errors.
  */
+
+import { normalizeApiError } from './errorHandler';
 
 const API_ORIGIN = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : '';
 const BASE_URL = `${API_ORIGIN}/api/v1`;
+const DEFAULT_TIMEOUT_MS = 15000;
 
 class ApiClient {
   getToken() {
@@ -21,9 +25,18 @@ class ApiClient {
   async request(endpoint, options = {}) {
     const url = `${BASE_URL}${endpoint}`;
     const token = this.getToken();
+    const timeoutMs = options.timeout || DEFAULT_TIMEOUT_MS;
+
+    // Create AbortController for request timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    // Generate lightweight correlation ID
+    const correlationId = 'req-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9);
 
     const headers = {
       'Content-Type': 'application/json',
+      'X-Request-Id': correlationId,
       ...options.headers
     };
 
@@ -33,35 +46,76 @@ class ApiClient {
 
     const config = {
       ...options,
-      headers
+      headers,
+      signal: options.signal || controller.signal
     };
 
     try {
       const response = await fetch(url, config);
+      clearTimeout(timeoutId);
+
       const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        if (response.status === 401) {
-          // If unauthorized, clear token and notify
+        const isAuthEndpoint = endpoint.startsWith('/auth/login') || endpoint.startsWith('/auth/signup');
+
+        if (response.status === 401 && !isAuthEndpoint) {
+          // If session expired during an authenticated request, clear token and notify
           this.setToken(null);
           window.dispatchEvent(new Event('campus_synq_unauthorized'));
         }
 
-        const errorMessage = (data && data.message) || `Request failed with status ${response.status}`;
-        const error = new Error(errorMessage);
-        error.status = response.status;
-        error.data = data;
-        error.errors = data ? data.errors : null;
-        throw error;
+        const rawErrorMessage = (data && data.message) || `Request failed with status ${response.status}`;
+        const rawError = new Error(rawErrorMessage);
+        rawError.status = response.status;
+        rawError.data = data;
+        rawError.errors = data ? data.errors : null;
+        rawError.code = data ? data.code : null;
+
+        // Normalize error with structured metadata
+        const normalized = normalizeApiError(rawError);
+        const enrichedError = new Error(normalized.message);
+        Object.assign(enrichedError, normalized, {
+          status: response.status,
+          data,
+          errors: data?.errors || null,
+          correlationId
+        });
+
+        throw enrichedError;
       }
 
       return data;
     } catch (err) {
-      throw err;
+      clearTimeout(timeoutId);
+
+      // If already normalized, rethrow directly
+      if (err.title && err.code && err.dataSaved !== undefined) {
+        throw err;
+      }
+
+      // Check if timeout caused abort
+      if (err.name === 'AbortError') {
+        const timeoutError = new Error('Request timed out after ' + Math.round(timeoutMs / 1000) + ' seconds.');
+        timeoutError.name = 'TimeoutError';
+        timeoutError.code = 'TIMEOUT';
+        const normalized = normalizeApiError(timeoutError);
+        Object.assign(timeoutError, normalized, { correlationId });
+        throw timeoutError;
+      }
+
+      // Normalize network / fetch failure
+      const normalized = normalizeApiError(err);
+      const enrichedError = new Error(normalized.message);
+      Object.assign(enrichedError, normalized, {
+        originalError: err,
+        correlationId
+      });
+      throw enrichedError;
     }
   }
 
-  get(endpoint, params) {
+  get(endpoint, params, options = {}) {
     let url = endpoint;
     if (params) {
       const query = new URLSearchParams();
@@ -75,25 +129,27 @@ class ApiClient {
         url += (url.includes('?') ? '&' : '?') + queryString;
       }
     }
-    return this.request(url, { method: 'GET' });
+    return this.request(url, { ...options, method: 'GET' });
   }
 
-  post(endpoint, body) {
+  post(endpoint, body, options = {}) {
     return this.request(endpoint, {
+      ...options,
       method: 'POST',
       body: JSON.stringify(body)
     });
   }
 
-  put(endpoint, body) {
+  put(endpoint, body, options = {}) {
     return this.request(endpoint, {
+      ...options,
       method: 'PUT',
       body: JSON.stringify(body)
     });
   }
 
-  delete(endpoint) {
-    return this.request(endpoint, { method: 'DELETE' });
+  delete(endpoint, options = {}) {
+    return this.request(endpoint, { ...options, method: 'DELETE' });
   }
 }
 

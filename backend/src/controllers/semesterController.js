@@ -1,6 +1,7 @@
 const Semester = require('../models/Semester');
 const Subject = require('../models/Subject');
 const ClassSection = require('../models/ClassSection');
+const TimetableEntry = require('../models/TimetableEntry');
 const { successResponse, errorResponse } = require('../utils/response');
 
 /**
@@ -132,16 +133,25 @@ const deleteSemester = async (req, res, next) => {
     const subjectCount = await Subject.countDocuments({ semester: req.params.id });
     // Check if any class section references this semester
     const sectionCount = await ClassSection.countDocuments({ semester: req.params.id });
+    // Check if any timetable entry references this semester
+    const timetableCount = await TimetableEntry.countDocuments({ semester: req.params.id });
 
-    if (subjectCount > 0 || sectionCount > 0) {
+    if (subjectCount > 0 || sectionCount > 0 || timetableCount > 0) {
       const reasons = [];
       if (subjectCount > 0) reasons.push(`${subjectCount} subject(s)`);
       if (sectionCount > 0) reasons.push(`${sectionCount} class section(s)`);
+      if (timetableCount > 0) reasons.push(`${timetableCount} timetable schedule entry(ies)`);
 
       return errorResponse(
         res,
         `Cannot delete '${semester.name}'. It is currently referenced by ${reasons.join(' and ')}. Please reassign or delete these dependencies first.`,
-        400
+        400,
+        null,
+        {
+          code: 'REFERENTIAL_INTEGRITY_VIOLATION',
+          details: { dependencies: reasons },
+          recommendation: 'Reassign or delete dependent subjects, sections, or timetable slots before deleting this semester.'
+        }
       );
     }
 

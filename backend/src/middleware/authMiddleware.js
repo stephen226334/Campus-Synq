@@ -15,7 +15,10 @@ const authMiddleware = async (req, res, next) => {
     }
 
     if (!token) {
-      return errorResponse(res, 'Authentication required. No token provided.', 401);
+      return errorResponse(res, 'Authentication required. No token provided.', 401, null, {
+        code: 'UNAUTHORIZED',
+        recommendation: 'Please provide a valid Bearer token in the Authorization header.'
+      });
     }
 
     let decoded;
@@ -23,13 +26,22 @@ const authMiddleware = async (req, res, next) => {
       decoded = verifyToken(token);
     } catch (err) {
       if (err.name === 'TokenExpiredError') {
-        return errorResponse(res, 'Token expired. Please login again.', 401);
+        return errorResponse(res, 'Token expired. Please login again.', 401, null, {
+          code: 'TOKEN_EXPIRED',
+          recommendation: 'Your session has expired. Please sign in again with your credentials.'
+        });
       }
-      return errorResponse(res, 'Invalid token. Authorization denied.', 401);
+      return errorResponse(res, 'Invalid token. Authorization denied.', 401, null, {
+        code: 'INVALID_TOKEN',
+        recommendation: 'Your security token is invalid or corrupt. Please sign in again.'
+      });
     }
 
     if (!decoded || !decoded.userId) {
-      return errorResponse(res, 'Malformed token payload.', 401);
+      return errorResponse(res, 'Malformed token payload.', 401, null, {
+        code: 'UNAUTHORIZED',
+        recommendation: 'Please obtain a new authentication token by signing in.'
+      });
     }
 
     let user = null;

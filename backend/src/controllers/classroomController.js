@@ -1,4 +1,5 @@
 const Classroom = require('../models/Classroom');
+const TimetableEntry = require('../models/TimetableEntry');
 const { successResponse, errorResponse } = require('../utils/response');
 
 /**
@@ -112,6 +113,21 @@ const deleteClassroom = async (req, res, next) => {
     const classroom = await Classroom.findById(req.params.id);
     if (!classroom) {
       return errorResponse(res, 'Classroom not found', 404);
+    }
+
+    const timetableCount = await TimetableEntry.countDocuments({ roomId: req.params.id });
+    if (timetableCount > 0) {
+      return errorResponse(
+        res,
+        `Cannot delete classroom '${classroom.roomNumber}'. It is currently assigned in ${timetableCount} timetable session(s). Please reassign or delete these sessions first.`,
+        400,
+        null,
+        {
+          code: 'REFERENTIAL_INTEGRITY_VIOLATION',
+          details: { timetableUsageCount: timetableCount },
+          recommendation: 'Reassign or remove linked timetable sessions before deleting this classroom.'
+        }
+      );
     }
 
     await classroom.deleteOne();

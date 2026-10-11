@@ -30,7 +30,7 @@ export const SemestersPage = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
 
-  const { showToast } = useToast();
+  const { showToast, showError, showSuccess } = useToast();
 
   const fetchSemesters = useCallback(async () => {
     setIsLoading(true);
@@ -44,11 +44,11 @@ export const SemestersPage = () => {
         setSemesters(res.data);
       }
     } catch (err) {
-      showToast(err.message || 'Failed to load semesters', 'error');
+      showError(err, { title: 'Failed to Load Semesters' });
     } finally {
       setIsLoading(false);
     }
-  }, [searchQuery, statusFilter, showToast]);
+  }, [searchQuery, statusFilter, showError]);
 
   useEffect(() => {
     fetchSemesters();
@@ -96,16 +96,20 @@ export const SemestersPage = () => {
     try {
       if (editingItem) {
         await api.put(`/admin/semesters/${editingItem._id}`, formData);
-        showToast(`Semester '${formData.name}' updated successfully`, 'success');
+        showSuccess(`Semester '${formData.name}' Updated`, {
+          message: 'Semester details saved successfully.'
+        });
       } else {
         await api.post('/admin/semesters', formData);
-        showToast(`Semester '${formData.name}' created successfully`, 'success');
+        showSuccess(`Semester '${formData.name}' Created`, {
+          message: 'New semester created successfully.'
+        });
       }
       setIsModalOpen(false);
       fetchSemesters();
     } catch (err) {
       setFormErrors({ submit: err.message });
-      showToast(err.message || 'Operation failed', 'error');
+      showError(err, { title: editingItem ? 'Failed to Update Semester' : 'Failed to Create Semester' });
     } finally {
       setIsSubmitting(false);
     }
@@ -123,12 +127,15 @@ export const SemestersPage = () => {
     setDeleteError(null);
     try {
       await api.delete(`/admin/semesters/${deletingItem._id}`);
-      showToast(`Semester '${deletingItem.name}' deleted successfully`, 'success');
+      showSuccess(`Semester Deleted`, {
+        message: `Semester '${deletingItem.name}' was deleted successfully.`
+      });
       setIsDeleteDialogOpen(false);
       setDeletingItem(null);
       fetchSemesters();
     } catch (err) {
       setDeleteError(err.message || 'Failed to delete semester');
+      showError(err, { title: 'Cannot Delete Semester' });
     } finally {
       setIsDeleting(false);
     }

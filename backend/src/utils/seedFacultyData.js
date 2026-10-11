@@ -427,7 +427,27 @@ const seedFacultyPortalData = async () => {
       { upsert: true, new: true }
     );
 
-    // 5. Official Dean Account
+    // 5a. Official Admin Account
+    let admin = await Admin.findOne({ email: 'admin@campussynq.com' });
+    if (!admin) {
+      admin = new Admin({
+        fullName: 'Dr. Sarah Connor',
+        email: 'admin@campussynq.com',
+        password: 'AdminPassword2026!',
+        role: 'ADMIN',
+        department: 'Computer Science Department',
+        status: 'ACTIVE'
+      });
+      await admin.save();
+      console.log('Seeded official Admin account: admin@campussynq.com');
+    } else {
+      admin.role = 'ADMIN';
+      admin.password = 'AdminPassword2026!';
+      admin.status = 'ACTIVE';
+      await admin.save();
+    }
+
+    // 5b. Official Dean Account
     let dean = await Admin.findOne({ email: 'dean@campussynq.com' });
     if (!dean) {
       dean = new Admin({

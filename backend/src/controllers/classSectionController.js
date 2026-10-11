@@ -1,5 +1,6 @@
 const ClassSection = require('../models/ClassSection');
 const Semester = require('../models/Semester');
+const TimetableEntry = require('../models/TimetableEntry');
 const { successResponse, errorResponse } = require('../utils/response');
 
 /**
@@ -146,6 +147,21 @@ const deleteClassSection = async (req, res, next) => {
     const section = await ClassSection.findById(req.params.id);
     if (!section) {
       return errorResponse(res, 'Class section not found', 404);
+    }
+
+    const timetableCount = await TimetableEntry.countDocuments({ section: req.params.id });
+    if (timetableCount > 0) {
+      return errorResponse(
+        res,
+        `Cannot delete class section '${section.name}'. It is currently scheduled in ${timetableCount} timetable session(s). Please reassign or delete these sessions first.`,
+        400,
+        null,
+        {
+          code: 'REFERENTIAL_INTEGRITY_VIOLATION',
+          details: { timetableUsageCount: timetableCount },
+          recommendation: 'Reassign or remove linked timetable sessions before deleting this class section.'
+        }
+      );
     }
 
     await section.deleteOne();

@@ -2055,6 +2055,32 @@ const modifySubstitution = async (req, res, next) => {
       return errorResponse(res, 'Substitution record not found', 404);
     }
 
+    if (status && !['CONFIRMED', 'PENDING', 'CANCELLED'].includes(status)) {
+      return errorResponse(
+        res,
+        `Invalid substitution status '${status}'. Allowed statuses are CONFIRMED, PENDING, CANCELLED.`,
+        400,
+        null,
+        {
+          code: 'INVALID_STATUS_TRANSITION',
+          recommendation: 'Specify a valid substitution status: CONFIRMED, PENDING, or CANCELLED.'
+        }
+      );
+    }
+
+    if (sub.status === 'CANCELLED' && status && status !== 'CANCELLED') {
+      return errorResponse(
+        res,
+        'Cannot reactivate a cancelled substitution. Please create a new substitution request.',
+        400,
+        null,
+        {
+          code: 'INVALID_STATUS_TRANSITION',
+          recommendation: 'Create a new substitution request instead of modifying a cancelled one.'
+        }
+      );
+    }
+
     const timetableEntry = await TimetableEntry.findById(sub.timetableEntry);
     if (!timetableEntry) {
       return errorResponse(res, 'Linked timetable entry not found', 404);
@@ -2086,7 +2112,12 @@ const modifySubstitution = async (req, res, next) => {
           res,
           `${name} is already assigned to teach another lecture during this period.`,
           409,
-          { conflictType: 'FACULTY' }
+          { conflictType: 'FACULTY' },
+          {
+            code: 'SUBSTITUTION_FACULTY_CONFLICT',
+            details: { conflictType: 'FACULTY', facultyName: name },
+            recommendation: 'Select an available faculty member who has no scheduled classes during this period.'
+          }
         );
       }
     }
@@ -2107,7 +2138,12 @@ const modifySubstitution = async (req, res, next) => {
           res,
           `Room ${roomNum} is already occupied by another class during this period.`,
           409,
-          { conflictType: 'ROOM' }
+          { conflictType: 'ROOM' },
+          {
+            code: 'SUBSTITUTION_ROOM_CONFLICT',
+            details: { conflictType: 'ROOM', roomNumber: roomNum },
+            recommendation: 'Select an unoccupied room, lab, or auditorium for this time slot.'
+          }
         );
       }
     }
@@ -2127,7 +2163,12 @@ const modifySubstitution = async (req, res, next) => {
           res,
           `This class section is already scheduled for another subject during this period.`,
           409,
-          { conflictType: 'SECTION' }
+          { conflictType: 'SECTION' },
+          {
+            code: 'SUBSTITUTION_SECTION_CONFLICT',
+            details: { conflictType: 'SECTION' },
+            recommendation: 'Choose a time slot where this section has a free period.'
+          }
         );
       }
     }

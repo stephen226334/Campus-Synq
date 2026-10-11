@@ -237,7 +237,13 @@ const deleteFaculty = async (req, res, next) => {
       return errorResponse(
         res,
         `Cannot delete faculty member '${faculty.fullName}'. They are currently assigned to ${timetableCount} active timetable session(s). Please reassign or delete these sessions, or deactivate the faculty status to INACTIVE instead.`,
-        400
+        400,
+        null,
+        {
+          code: 'REFERENTIAL_INTEGRITY_VIOLATION',
+          details: { activeTimetableSessions: timetableCount },
+          recommendation: 'Reassign active timetable sessions or change faculty status to INACTIVE instead of deleting.'
+        }
       );
     }
 

@@ -1,4 +1,5 @@
 const Lab = require('../models/Lab');
+const TimetableEntry = require('../models/TimetableEntry');
 const { successResponse, errorResponse } = require('../utils/response');
 
 /**
@@ -117,6 +118,21 @@ const deleteLab = async (req, res, next) => {
     const lab = await Lab.findById(req.params.id);
     if (!lab) {
       return errorResponse(res, 'Lab not found', 404);
+    }
+
+    const timetableCount = await TimetableEntry.countDocuments({ roomId: req.params.id });
+    if (timetableCount > 0) {
+      return errorResponse(
+        res,
+        `Cannot delete laboratory '${lab.labName}' [${lab.labNumber}]. It is currently assigned in ${timetableCount} timetable session(s). Please reassign or delete these sessions first.`,
+        400,
+        null,
+        {
+          code: 'REFERENTIAL_INTEGRITY_VIOLATION',
+          details: { timetableUsageCount: timetableCount },
+          recommendation: 'Reassign or remove linked timetable sessions before deleting this laboratory.'
+        }
+      );
     }
 
     await lab.deleteOne();

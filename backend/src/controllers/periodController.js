@@ -128,7 +128,13 @@ const deletePeriod = async (req, res, next) => {
       return errorResponse(
         res,
         `Cannot delete period '${period.periodNumber}'. It is currently used in ${usageCount} timetable schedule entry(ies). Please reassign or delete these sessions first.`,
-        400
+        400,
+        null,
+        {
+          code: 'REFERENTIAL_INTEGRITY_VIOLATION',
+          details: { timetableUsageCount: usageCount },
+          recommendation: 'Reassign or remove linked timetable sessions before deleting this period.'
+        }
       );
     }
 

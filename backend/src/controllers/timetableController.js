@@ -146,6 +146,10 @@ const createTimetableEntry = async (req, res, next) => {
     if (conflictResult.hasConflict) {
       return errorResponse(res, conflictResult.message, 409, {
         conflictType: conflictResult.conflictType
+      }, {
+        code: 'TIMETABLE_CONFLICT',
+        recommendation: conflictResult.recommendation,
+        dataSaved: false
       });
     }
 
@@ -222,6 +226,10 @@ const updateTimetableEntry = async (req, res, next) => {
     if (conflictResult.hasConflict) {
       return errorResponse(res, conflictResult.message, 409, {
         conflictType: conflictResult.conflictType
+      }, {
+        code: 'TIMETABLE_CONFLICT',
+        recommendation: conflictResult.recommendation,
+        dataSaved: false
       });
     }
 

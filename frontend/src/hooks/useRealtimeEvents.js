@@ -1,67 +1,143 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 
-export const useRealtimeEvents = (onEventReceived) => {
-  const { token, isAuthenticated, isFaculty } = useAuth();
-  const { showToast } = useToast();
+/**
+ * Enhanced Real-Time Academic Events (SSE) hook
+ * Features connection monitoring, exponential backoff reconnection,
+ * non-blocking notifications, and stale-data refresh callbacks.
+ */
+export const useRealtimeEvents = (onEventReceived, options = {}) => {
+  const { token, isAuthenticated, isFaculty, isDean } = useAuth();
+  const { showWarning, showSuccess } = useToast();
+
   const eventSourceRef = useRef(null);
+  const retryTimeoutRef = useRef(null);
+  const retryCountRef = useRef(0);
+  const wasConnectedRef = useRef(false);
+  const isManuallyClosedRef = useRef(false);
+
+  const maxRetries = options.maxRetries || 8;
+  const onReconnect = options.onReconnect;
+
+  // Determine appropriate SSE endpoint based on role or explicit option
+  const endpoint = options.endpoint || (isDean ? '/api/v1/dean/events' : '/api/v1/faculty/events');
+
+  const connect = useCallback(() => {
+    if (!isAuthenticated || !token || (!isFaculty && !isDean)) {
+      return;
+    }
+
+    if (isManuallyClosedRef.current) {
+      return;
+    }
+
+    // Clean up any existing connection
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+
+    const apiOrigin = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : '';
+    const sseUrl = `${apiOrigin}${endpoint}?token=${encodeURIComponent(token)}`;
+
+    try {
+      const es = new EventSource(sseUrl);
+      eventSourceRef.current = es;
+
+      es.onopen = () => {
+        retryCountRef.current = 0;
+        if (wasConnectedRef.current) {
+          showSuccess('Live updates restored.', {
+            title: 'Live Connection Restored',
+            recommendation: 'Academic schedule is synchronized in real-time.',
+            duration: 3500
+          });
+          // Trigger refresh of stale dashboard/timetable data
+          if (onReconnect) {
+            try {
+              onReconnect();
+            } catch (err) {
+              console.warn('[SSE] Error during onReconnect callback:', err);
+            }
+          }
+        }
+        wasConnectedRef.current = true;
+      };
+
+      es.addEventListener('connected', () => {
+        // Handshake confirmed by backend server
+      });
+
+      // Timetable & Substitution academic events
+      const registerListener = (eventName, callbackType) => {
+        es.addEventListener(eventName, (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            if (onEventReceived) {
+              onEventReceived(callbackType, payload);
+            }
+          } catch (err) {
+            console.error(`[SSE] Failed to parse ${eventName} payload:`, err);
+          }
+        });
+      };
+
+      registerListener('timetable_created', 'TIMETABLE_CREATED');
+      registerListener('timetable_updated', 'TIMETABLE_UPDATED');
+      registerListener('timetable_deleted', 'TIMETABLE_DELETED');
+      registerListener('substitution_updated', 'SUBSTITUTION_UPDATED');
+
+      es.onerror = () => {
+        // Close broken connection
+        es.close();
+        eventSourceRef.current = null;
+
+        if (isManuallyClosedRef.current) {
+          return;
+        }
+
+        if (wasConnectedRef.current && retryCountRef.current === 0) {
+          showWarning('Live updates disconnected. Reconnecting...', {
+            title: 'Real-Time Disconnected',
+            recommendation: 'Reconnection in progress. Schedule changes will sync automatically.',
+            duration: 4500
+          });
+        }
+
+        // Bounded exponential backoff with retry limit
+        if (retryCountRef.current < maxRetries) {
+          const backoffDelay = Math.min(1000 * Math.pow(1.5, retryCountRef.current), 15000);
+          retryCountRef.current += 1;
+
+          retryTimeoutRef.current = setTimeout(() => {
+            connect();
+          }, backoffDelay);
+        } else {
+          console.warn('[SSE] Maximum reconnection attempts reached. Pausing live stream.');
+        }
+      };
+    } catch (err) {
+      console.error('[SSE] Failed to initialize EventSource:', err);
+    }
+  }, [isAuthenticated, token, isFaculty, isDean, endpoint, maxRetries, onReconnect, onEventReceived, showWarning, showSuccess]);
 
   useEffect(() => {
-    if (!isAuthenticated || !token || !isFaculty) {
+    isManuallyClosedRef.current = false;
+    connect();
+
+    return () => {
+      isManuallyClosedRef.current = true;
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
       }
-      return;
-    }
-
-    const apiOrigin = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : '';
-    const sseUrl = `${apiOrigin}/api/v1/faculty/events?token=${encodeURIComponent(token)}`;
-    const es = new EventSource(sseUrl);
-    eventSourceRef.current = es;
-
-    es.addEventListener('connected', () => {
-      // Connected to real-time academic event stream
-    });
-
-    es.addEventListener('substitution_updated', (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        showToast('Real-Time Update: Timetable substitution updated.', 'info');
-        if (onEventReceived) onEventReceived('SUBSTITUTION_UPDATED', payload);
-      } catch (err) {
-        console.error('Failed to parse SSE substitution event:', err);
-      }
-    });
-
-    es.addEventListener('timetable_updated', (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        if (onEventReceived) onEventReceived('TIMETABLE_UPDATED', payload);
-      } catch (err) {
-        console.error('Failed to parse SSE timetable event:', err);
-      }
-    });
-
-    es.addEventListener('timetable_created', (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        if (onEventReceived) onEventReceived('TIMETABLE_CREATED', payload);
-      } catch (err) {
-        console.error('Failed to parse SSE timetable event:', err);
-      }
-    });
-
-    es.onerror = () => {
-      // Reconnection handled automatically by browser EventSource
     };
-
-    return () => {
-      es.close();
-      eventSourceRef.current = null;
-    };
-  }, [token, isAuthenticated, isFaculty, onEventReceived, showToast]);
+  }, [connect]);
 };
 
 export default useRealtimeEvents;
