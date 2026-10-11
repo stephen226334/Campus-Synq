@@ -7,7 +7,8 @@ const testFiles = [
   'tests/faculty_portal.test.js',
   'tests/dean_portal.test.js',
   'tests/stage3_e2e_integration.test.js',
-  'tests/error_handling.test.js'
+  'tests/error_handling.test.js',
+  'tests/bulk_delete.test.js'
 ];
 
 console.log('========================================================');
@@ -28,6 +29,6 @@ for (const file of testFiles) {
 }
 
 console.log('\n========================================================');
-console.log('✔ ALL 6 TEST SUITES PASSED CLEANLY');
+console.log('✔ ALL 7 TEST SUITES PASSED CLEANLY');
 console.log('========================================================\n');
 process.exit(0);

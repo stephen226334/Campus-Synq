@@ -148,8 +148,18 @@ class ApiClient {
     });
   }
 
-  delete(endpoint, options = {}) {
-    return this.request(endpoint, { ...options, method: 'DELETE' });
+  delete(endpoint, bodyOrOptions = {}, maybeOptions = {}) {
+    if (bodyOrOptions && (bodyOrOptions.headers || bodyOrOptions.signal || bodyOrOptions.timeout || bodyOrOptions.body)) {
+      return this.request(endpoint, { ...bodyOrOptions, method: 'DELETE' });
+    }
+    if (bodyOrOptions && typeof bodyOrOptions === 'object' && Object.keys(bodyOrOptions).length > 0) {
+      return this.request(endpoint, {
+        ...maybeOptions,
+        method: 'DELETE',
+        body: JSON.stringify(bodyOrOptions)
+      });
+    }
+    return this.request(endpoint, { ...maybeOptions, method: 'DELETE' });
   }
 }
 

@@ -1,4 +1,6 @@
+const mongoose = require('mongoose');
 const TimetableEntry = require('../models/TimetableEntry');
+const Substitution = require('../models/Substitution');
 const Classroom = require('../models/Classroom');
 const Lab = require('../models/Lab');
 const Auditorium = require('../models/Auditorium');
@@ -272,10 +274,104 @@ const deleteTimetableEntry = async (req, res, next) => {
       return errorResponse(res, 'Timetable entry not found', 404);
     }
 
+    // Clean up any linked substitution records
+    await Substitution.deleteMany({ timetableEntry: req.params.id });
+
     await entry.deleteOne();
     academicEvents.emit(ACADEMIC_EVENTS.TIMETABLE_DELETED, { id: req.params.id });
 
     return successResponse(res, null, 'Timetable session deleted successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Bulk delete timetable entries
+ * DELETE /api/v1/admin/timetable/bulk
+ */
+const bulkDeleteTimetableEntries = async (req, res, next) => {
+  try {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return errorResponse(
+        res,
+        'Please provide an array of timetable entry IDs to delete.',
+        400,
+        null,
+        {
+          code: 'INVALID_REQUEST',
+          recommendation: 'Select at least one timetable entry to delete.'
+        }
+      );
+    }
+
+    // Validate that every ID is a valid MongoDB ObjectId
+    const invalidIds = ids.filter((id) => !id || !mongoose.Types.ObjectId.isValid(id));
+    if (invalidIds.length > 0) {
+      return errorResponse(
+        res,
+        `One or more provided IDs are invalid: ${invalidIds.slice(0, 3).join(', ')}${invalidIds.length > 3 ? '...' : ''}.`,
+        400,
+        null,
+        {
+          code: 'INVALID_RESOURCE_ID',
+          details: { invalidIds },
+          recommendation: 'Ensure all selected entry IDs are valid MongoDB ObjectIds.'
+        }
+      );
+    }
+
+    // Deduplicate IDs
+    const uniqueIds = Array.from(new Set(ids.map((id) => id.toString())));
+
+    // Find existing timetable entries
+    const existingEntries = await TimetableEntry.find({ _id: { $in: uniqueIds } });
+    if (existingEntries.length === 0) {
+      return errorResponse(
+        res,
+        'None of the specified timetable entries were found in the database.',
+        404,
+        null,
+        {
+          code: 'NOT_FOUND',
+          recommendation: 'The selected timetable entries may have already been deleted.'
+        }
+      );
+    }
+
+    const foundIds = existingEntries.map((e) => e._id.toString());
+    const missingIds = uniqueIds.filter((id) => !foundIds.includes(id));
+
+    // Delete linked substitution records to prevent orphan data
+    await Substitution.deleteMany({ timetableEntry: { $in: foundIds } });
+
+    // Delete the timetable entries
+    const deleteResult = await TimetableEntry.deleteMany({ _id: { $in: foundIds } });
+
+    // Emit real-time deletion events
+    academicEvents.emit(ACADEMIC_EVENTS.TIMETABLE_DELETED, {
+      ids: foundIds,
+      deletedCount: deleteResult.deletedCount
+    });
+
+    const isPartial = missingIds.length > 0;
+    const message = isPartial
+      ? `${deleteResult.deletedCount} of ${uniqueIds.length} timetable entries deleted successfully. (${missingIds.length} entries were already missing)`
+      : `${deleteResult.deletedCount} timetable ${deleteResult.deletedCount === 1 ? 'entry' : 'entries'} deleted successfully`;
+
+    return successResponse(
+      res,
+      {
+        deletedCount: deleteResult.deletedCount,
+        deletedIds: foundIds,
+        missingIds: missingIds.length > 0 ? missingIds : undefined,
+        requestedCount: uniqueIds.length,
+        isPartial
+      },
+      message
+    );
   } catch (error) {
     next(error);
   }
@@ -323,5 +419,6 @@ module.exports = {
   createTimetableEntry,
   updateTimetableEntry,
   deleteTimetableEntry,
+  bulkDeleteTimetableEntries,
   getTodayClasses
 };

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../../api/client';
 import Modal from '../../components/common/Modal';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
@@ -18,7 +18,9 @@ import {
   Trash2,
   AlertTriangle,
   Loader2,
-  Filter
+  Filter,
+  CheckSquare,
+  X
 } from 'lucide-react';
 
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -42,6 +44,16 @@ export const TimetablePage = () => {
   const [sectionFilter, setSectionFilter] = useState('');
   const [facultyFilter, setFacultyFilter] = useState('');
 
+  // Bulk selection state (tracked by stable MongoDB ObjectIds)
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [selectedEntriesMap, setSelectedEntriesMap] = useState(new Map());
+  const headerCheckboxRef = useRef(null);
+
+  // Bulk delete confirmation modal state
+  const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [bulkDeleteError, setBulkDeleteError] = useState(null);
+
   // Create / Edit modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
@@ -64,7 +76,7 @@ export const TimetablePage = () => {
   const [deletingItem, setDeletingItem] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const { showToast, showError, showSuccess } = useToast();
+  const { showToast, showError, showSuccess, showWarning } = useToast();
 
   const loadAllMasterData = async () => {
     try {
@@ -203,6 +215,148 @@ export const TimetablePage = () => {
     setIsDeleteDialogOpen(true);
   };
 
+  const visibleIds = entries.map((e) => e._id);
+  const selectedVisibleCount = visibleIds.filter((id) => selectedIds.includes(id)).length;
+  const isAllVisibleSelected = visibleIds.length > 0 && selectedVisibleCount === visibleIds.length;
+  const isIndeterminate = selectedVisibleCount > 0 && selectedVisibleCount < visibleIds.length;
+
+  useEffect(() => {
+    if (headerCheckboxRef.current) {
+      headerCheckboxRef.current.indeterminate = isIndeterminate;
+    }
+  }, [isIndeterminate]);
+
+  // Toggle single row selection
+  const handleToggleRow = (entry) => {
+    const id = entry._id;
+    setSelectedIds((prev) => {
+      const isSelected = prev.includes(id);
+      if (isSelected) {
+        return prev.filter((item) => item !== id);
+      } else {
+        return [...prev, id];
+      }
+    });
+
+    setSelectedEntriesMap((prevMap) => {
+      const newMap = new Map(prevMap);
+      if (newMap.has(id)) {
+        newMap.delete(id);
+      } else {
+        newMap.set(id, entry);
+      }
+      return newMap;
+    });
+  };
+
+  // Toggle select all visible
+  const handleToggleSelectAllVisible = () => {
+    if (isAllVisibleSelected) {
+      // Deselect all visible
+      setSelectedIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+      setSelectedEntriesMap((prevMap) => {
+        const newMap = new Map(prevMap);
+        visibleIds.forEach((id) => newMap.delete(id));
+        return newMap;
+      });
+    } else {
+      // Select all visible
+      setSelectedIds((prev) => {
+        const newSet = new Set(prev);
+        visibleIds.forEach((id) => newSet.add(id));
+        return Array.from(newSet);
+      });
+      setSelectedEntriesMap((prevMap) => {
+        const newMap = new Map(prevMap);
+        entries.forEach((e) => newMap.set(e._id, e));
+        return newMap;
+      });
+    }
+  };
+
+  // Explicit select all visible
+  const handleSelectAllVisible = () => {
+    setSelectedIds((prev) => {
+      const newSet = new Set(prev);
+      visibleIds.forEach((id) => newSet.add(id));
+      return Array.from(newSet);
+    });
+    setSelectedEntriesMap((prevMap) => {
+      const newMap = new Map(prevMap);
+      entries.forEach((e) => newMap.set(e._id, e));
+      return newMap;
+    });
+  };
+
+  // Clear all selections
+  const handleClearSelection = () => {
+    setSelectedIds([]);
+    setSelectedEntriesMap(new Map());
+  };
+
+  // Open bulk delete confirmation modal
+  const handleOpenBulkDelete = () => {
+    if (selectedIds.length === 0) return;
+    setBulkDeleteError(null);
+    setIsBulkDeleteDialogOpen(true);
+  };
+
+  // Confirm and execute bulk delete
+  const handleConfirmBulkDelete = async () => {
+    if (selectedIds.length === 0 || isBulkDeleting) return;
+
+    setIsBulkDeleting(true);
+    setBulkDeleteError(null);
+
+    try {
+      const response = await api.delete('/admin/timetable/bulk', { ids: selectedIds });
+
+      const deletedCount = response?.data?.deletedCount ?? response?.deletedCount ?? selectedIds.length;
+      const failedCount = response?.data?.failedCount ?? response?.failedCount ?? 0;
+      const deletedIds = response?.data?.deletedIds ?? response?.deletedIds ?? selectedIds;
+
+      if (failedCount > 0) {
+        showWarning(
+          `${deletedCount} entries deleted. ${failedCount} entries could not be deleted. Review the failed entries and retry if appropriate.`,
+          { title: 'Partial Bulk Deletion' }
+        );
+        // Remove successfully deleted IDs from selection, preserve failed ones
+        setSelectedIds((prev) => prev.filter((id) => !deletedIds.includes(id)));
+        setSelectedEntriesMap((prevMap) => {
+          const newMap = new Map(prevMap);
+          deletedIds.forEach((id) => newMap.delete(id));
+          return newMap;
+        });
+      } else {
+        showSuccess(
+          `${deletedCount} timetable ${deletedCount === 1 ? 'entry' : 'entries'} deleted successfully.`,
+          { title: 'Bulk Deletion Complete' }
+        );
+        // Clear entire selection
+        setSelectedIds([]);
+        setSelectedEntriesMap(new Map());
+      }
+
+      setIsBulkDeleteDialogOpen(false);
+      // Refresh timetable data
+      fetchTimetable();
+    } catch (err) {
+      console.error('Bulk delete failed:', err);
+      const errorMsg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Unable to delete the selected timetable entries. Your selection has been preserved.';
+      setBulkDeleteError(errorMsg);
+      showError(err, {
+        title: 'Bulk Deletion Failed',
+        fallbackMessage: 'Unable to delete the selected timetable entries. Your selection has been preserved.'
+      });
+      // Selection is preserved intact!
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
   const handleConfirmDelete = async () => {
     if (!deletingItem) return;
     setIsDeleting(true);
@@ -210,6 +364,13 @@ export const TimetablePage = () => {
       await api.delete(`/admin/timetable/${deletingItem._id}`);
       showSuccess('Timetable Session Deleted', {
         message: 'The timetable session has been deleted.'
+      });
+      // Remove from selection if present
+      setSelectedIds((prev) => prev.filter((id) => id !== deletingItem._id));
+      setSelectedEntriesMap((prevMap) => {
+        const newMap = new Map(prevMap);
+        newMap.delete(deletingItem._id);
+        return newMap;
       });
       setIsDeleteDialogOpen(false);
       setDeletingItem(null);
@@ -319,6 +480,50 @@ export const TimetablePage = () => {
         </div>
       </div>
 
+      {/* Bulk Action Toolbar */}
+      {selectedIds.length > 0 && (
+        <div className="timetable-bulk-toolbar" role="toolbar" aria-label="Bulk actions toolbar">
+          <div className="bulk-toolbar-left">
+            <span className="bulk-toolbar-count-badge">
+              <CheckSquare size={16} />
+              <strong>{selectedIds.length}</strong> selected
+            </span>
+            <span className="bulk-toolbar-divider">|</span>
+            <button
+              type="button"
+              className="bulk-toolbar-btn"
+              onClick={handleSelectAllVisible}
+              title="Select all rows currently displayed in the table"
+              id="btn-bulk-select-all"
+            >
+              Select All
+            </button>
+            <button
+              type="button"
+              className="bulk-toolbar-btn"
+              onClick={handleClearSelection}
+              title="Clear all selections"
+              id="btn-bulk-clear-selection"
+            >
+              <X size={14} style={{ marginRight: '4px' }} />
+              Clear Selection
+            </button>
+          </div>
+          <div className="bulk-toolbar-right">
+            <button
+              type="button"
+              className="btn btn-danger btn-sm"
+              onClick={handleOpenBulkDelete}
+              disabled={isBulkDeleting}
+              id="btn-bulk-delete"
+            >
+              <Trash2 size={15} />
+              <span>Delete Selected</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main Schedule Display */}
       {isLoading ? (
         <LoadingSkeleton message="Loading timetable schedule..." rows={6} cols={5} />
@@ -337,6 +542,17 @@ export const TimetablePage = () => {
             <table className="data-table">
               <thead>
                 <tr>
+                  <th style={{ width: '44px', textAlign: 'center' }}>
+                    <input
+                      ref={headerCheckboxRef}
+                      type="checkbox"
+                      className="timetable-checkbox"
+                      checked={isAllVisibleSelected}
+                      onChange={handleToggleSelectAllVisible}
+                      aria-label="Select all displayed timetable entries"
+                      id="checkbox-select-all-header"
+                    />
+                  </th>
                   <th style={{ width: '110px' }}>Day</th>
                   <th style={{ width: '160px' }}>Period Slot</th>
                   <th>Subject</th>
@@ -347,70 +563,83 @@ export const TimetablePage = () => {
                 </tr>
               </thead>
               <tbody>
-                {entries.map((entry) => (
-                  <tr key={entry._id}>
-                    <td>
-                      <span className="font-semibold text-primary">{entry.day}</span>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span className="code-badge font-mono" style={{ alignSelf: 'flex-start' }}>
-                          {entry.period?.periodNumber || 'Period'}
+                {entries.map((entry) => {
+                  const isSelected = selectedIds.includes(entry._id);
+                  return (
+                    <tr key={entry._id} className={isSelected ? 'timetable-row-selected' : ''}>
+                      <td style={{ textAlign: 'center', width: '44px' }}>
+                        <input
+                          type="checkbox"
+                          className="timetable-checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleRow(entry)}
+                          aria-label={`Select ${entry.subject?.name || 'session'} on ${entry.day}`}
+                          id={`checkbox-row-${entry._id}`}
+                        />
+                      </td>
+                      <td>
+                        <span className="font-semibold text-primary">{entry.day}</span>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <span className="code-badge font-mono" style={{ alignSelf: 'flex-start' }}>
+                            {entry.period?.periodNumber || 'Period'}
+                          </span>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                            {entry.period?.startTime} - {entry.period?.endTime}
+                          </span>
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <span className="font-semibold">{entry.subject?.name}</span>
+                          <span className="text-muted text-sm">{entry.subject?.code}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <span className="badge badge-active" style={{ textTransform: 'none' }}>
+                          <Layers size={11} /> {entry.semester?.name} • {entry.section?.name}
                         </span>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                          {entry.period?.startTime} - {entry.period?.endTime}
-                        </span>
-                      </div>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span className="font-semibold">{entry.subject?.name}</span>
-                        <span className="text-muted text-sm">{entry.subject?.code}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <span className="badge badge-active" style={{ textTransform: 'none' }}>
-                        <Layers size={11} /> {entry.semester?.name} • {entry.section?.name}
-                      </span>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                        <User size={14} style={{ color: 'var(--text-muted)' }} />
-                        <span className="font-medium">{entry.faculty?.fullName}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span className="font-semibold" style={{ color: 'var(--primary-main)' }}>
-                          {entry.roomDetails?.roomNumber}
-                        </span>
-                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                          {entry.roomType}
-                        </span>
-                      </div>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <div className="row-action-buttons">
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => handleOpenEdit(entry)}
-                          title="Edit Session"
-                        >
-                          <Edit size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm text-danger"
-                          onClick={() => handleOpenDelete(entry)}
-                          title="Delete Session"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <User size={14} style={{ color: 'var(--text-muted)' }} />
+                          <span className="font-medium">{entry.faculty?.fullName}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <span className="font-semibold" style={{ color: 'var(--primary-main)' }}>
+                            {entry.roomDetails?.roomNumber}
+                          </span>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                            {entry.roomType}
+                          </span>
+                        </div>
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <div className="row-action-buttons">
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => handleOpenEdit(entry)}
+                            title="Edit Session"
+                          >
+                            <Edit size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm text-danger"
+                            onClick={() => handleOpenDelete(entry)}
+                            title="Delete Session"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -636,6 +865,122 @@ export const TimetablePage = () => {
         itemName={deletingItem ? `${deletingItem.subject?.name} on ${deletingItem.day}` : ''}
         isDeleting={isDeleting}
       />
+
+      {/* Bulk Delete Confirmation Modal */}
+      <Modal
+        isOpen={isBulkDeleteDialogOpen}
+        onClose={() => {
+          if (!isBulkDeleting) {
+            setIsBulkDeleteDialogOpen(false);
+            setBulkDeleteError(null);
+          }
+        }}
+        title="Delete Selected Timetable Entries?"
+        maxWidth="640px"
+      >
+        <div style={{ padding: '0.25rem 0' }}>
+          <div style={{ display: 'flex', gap: '0.85rem', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
+            <div style={{ color: 'var(--status-danger-text, #ef4444)', flexShrink: 0, marginTop: '2px' }}>
+              <AlertTriangle size={24} />
+            </div>
+            <div>
+              <p style={{ margin: '0 0 0.35rem 0', fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+                You are about to delete <strong>{selectedIds.length}</strong> timetable {selectedIds.length === 1 ? 'entry' : 'entries'}.
+              </p>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                This action cannot be undone. Associated substitution requests referencing these entries will also be removed. Review the selection before continuing.
+              </p>
+            </div>
+          </div>
+
+          {bulkDeleteError && (
+            <div className="alert-box alert-error" role="alert" style={{ marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+                <span>{bulkDeleteError}</span>
+              </div>
+            </div>
+          )}
+
+          <div style={{ marginBottom: '1.25rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>
+                Selected Entries Review ({selectedIds.length})
+              </span>
+            </div>
+            <div className="bulk-delete-summary-container">
+              {selectedIds.map((id) => {
+                const item = selectedEntriesMap.get(id);
+                if (!item) {
+                  return (
+                    <div key={id} className="bulk-delete-item-row">
+                      <span className="font-mono text-xs text-muted">ID: {id}</span>
+                    </div>
+                  );
+                }
+                return (
+                  <div key={id} className="bulk-delete-item-row">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: '85px' }}>
+                      <span className="badge badge-primary font-semibold" style={{ fontSize: '0.72rem' }}>
+                        {item.day}
+                      </span>
+                    </div>
+                    <div style={{ flex: 1, minWidth: '150px' }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+                        {item.subject?.name || 'Class Session'}
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                        {item.subject?.code ? `${item.subject?.code} • ` : ''}
+                        {item.semester?.name || ''} {item.section?.name ? `(${item.section?.name})` : ''}
+                      </div>
+                    </div>
+                    <div style={{ minWidth: '120px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      {item.faculty?.fullName || 'No Faculty'}
+                    </div>
+                    <div style={{ minWidth: '80px', fontSize: '0.8rem', textAlign: 'right', color: 'var(--primary-main)', fontWeight: 600 }}>
+                      {item.roomDetails?.roomNumber || item.roomType || '—'}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="modal-actions">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                setIsBulkDeleteDialogOpen(false);
+                setBulkDeleteError(null);
+              }}
+              disabled={isBulkDeleting}
+              id="btn-bulk-delete-cancel"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-danger"
+              onClick={handleConfirmBulkDelete}
+              disabled={isBulkDeleting}
+              id="btn-bulk-delete-confirm"
+            >
+              {isBulkDeleting ? (
+                <>
+                  <Loader2 className="spinner" size={16} />
+                  <span>Deleting {selectedIds.length} Entries...</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 size={15} />
+                  <span>Delete {selectedIds.length} {selectedIds.length === 1 ? 'Entry' : 'Entries'}</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

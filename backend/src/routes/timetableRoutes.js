@@ -18,6 +18,7 @@ router.get('/today', timetableController.getTodayClasses);
 router.get('/:id', idParamValidator, validateMiddleware, timetableController.getTimetableEntryById);
 router.post('/', timetableCreateValidator, validateMiddleware, timetableController.createTimetableEntry);
 router.put('/:id', idParamValidator, timetableUpdateValidator, validateMiddleware, timetableController.updateTimetableEntry);
+router.delete('/bulk', timetableController.bulkDeleteTimetableEntries);
 router.delete('/:id', idParamValidator, validateMiddleware, timetableController.deleteTimetableEntry);
 
 module.exports = router;
