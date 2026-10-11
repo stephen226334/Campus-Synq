@@ -101,6 +101,32 @@ async function main() {
     }
   }
 
+  console.log(`${COLORS.cyan}Checking port availability...${COLORS.reset}`);
+
+  // Safely clean up any stale Campus Synq node processes on ports 5000 and 5173
+  if (process.platform === 'win32') {
+    const { execSync } = require('child_process');
+    for (const port of [5000, 5173]) {
+      try {
+        const netstat = execSync(`netstat -ano -p tcp | findstr :${port} | findstr LISTENING`, { encoding: 'utf8' }).trim();
+        if (netstat) {
+          const lines = netstat.split(/\r?\n/);
+          for (const l of lines) {
+            const parts = l.trim().split(/\s+/);
+            const pid = parts[parts.length - 1];
+            if (pid && pid !== '0' && pid !== process.pid.toString()) {
+              const taskinfo = execSync(`tasklist /fi "PID eq ${pid}" /fo csv /nh`, { encoding: 'utf8' }).trim();
+              if (taskinfo.toLowerCase().includes('node.exe')) {
+                console.log(`${COLORS.yellow}[Process Recovery]: Stopped previous stale process (PID ${pid}) on port ${port}.${COLORS.reset}`);
+                execSync(`taskkill /pid ${pid} /F /T`, { stdio: 'ignore' });
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+  }
+
   console.log(`${COLORS.cyan}Launching services...${COLORS.reset}\n`);
 
   // 2. Launch Backend Server
@@ -139,16 +165,21 @@ async function main() {
     openBrowser('http://localhost:5173');
   }, 2500);
 
-  // 5. Clean Termination Handler
+  // 5. Clean Synchronous Termination Handler
   const cleanup = () => {
     console.log(`\n${COLORS.yellow}Shutting down Campus Synq services...${COLORS.reset}`);
     try {
       if (process.platform === 'win32') {
-        if (backend.pid) exec(`taskkill /pid ${backend.pid} /T /F`, () => {});
-        if (frontend.pid) exec(`taskkill /pid ${frontend.pid} /T /F`, () => {});
+        const { execSync } = require('child_process');
+        if (backend && backend.pid) {
+          try { execSync(`taskkill /pid ${backend.pid} /T /F`, { stdio: 'ignore' }); } catch {}
+        }
+        if (frontend && frontend.pid) {
+          try { execSync(`taskkill /pid ${frontend.pid} /T /F`, { stdio: 'ignore' }); } catch {}
+        }
       } else {
-        backend.kill('SIGINT');
-        frontend.kill('SIGINT');
+        if (backend) backend.kill('SIGINT');
+        if (frontend) frontend.kill('SIGINT');
       }
     } catch {
       // Ignore cleanup errors
