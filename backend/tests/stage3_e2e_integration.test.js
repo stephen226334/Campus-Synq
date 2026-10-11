@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const app = require('../src/app');
+const connectDB = require('../src/config/db');
 const Admin = require('../src/models/Admin');
 const Semester = require('../src/models/Semester');
 const Subject = require('../src/models/Subject');
@@ -34,7 +35,7 @@ describe('Campus Synq Stage 3 — Master E2E Integration, Conflict & Security Te
 
   before(async () => {
     if (mongoose.connection.readyState === 0) {
-      await mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/campus_synq');
+      await connectDB();
     }
 
     // Clean up any test records from prior test runs

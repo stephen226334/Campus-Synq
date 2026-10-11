@@ -10,12 +10,12 @@ const Auditorium = require('../models/Auditorium');
 const TimetableEntry = require('../models/TimetableEntry');
 const Admin = require('../models/Admin');
 const Substitution = require('../models/Substitution');
-const { MONGODB_URI } = require('../config/env');
+const connectDB = require('../config/db');
 
 const seedFacultyPortalData = async () => {
   try {
     if (mongoose.connection.readyState === 0) {
-      await mongoose.connect(MONGODB_URI);
+      await connectDB();
     }
 
     console.log('Seeding / verifying Faculty Portal demonstration accounts & timetable...');

@@ -5,6 +5,7 @@ const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
 const app = require('../src/app');
 const { MONGODB_URI, JWT_SECRET } = require('../src/config/env');
+const connectDB = require('../src/config/db');
 const { academicEvents, ACADEMIC_EVENTS } = require('../src/utils/eventEmitter');
 
 // Models
@@ -32,7 +33,7 @@ let testPeriod3Id = '';
 
 test.before(async () => {
   if (mongoose.connection.readyState === 0) {
-    await mongoose.connect(MONGODB_URI);
+    await connectDB();
   }
 
   // Clean previous test data
@@ -138,6 +139,9 @@ test.before(async () => {
 });
 
 test.after(async () => {
+  if (mongoose.connection.readyState !== 1) {
+    return;
+  }
   await Promise.all([
     Admin.deleteMany({ email: /bulktest.*@campussynq\.test/ }),
     Faculty.deleteMany({ officialEmail: /bulktest.*@campussynq/ }),

@@ -14,7 +14,7 @@ const dbCheckMiddleware = (req, res, next) => {
   // readyState: 0 = disconnected, 1 = connected, 2 = connecting, 3 = disconnecting
   const readyState = mongoose.connection.readyState;
 
-  if (readyState === 0 || readyState === 3) {
+  if (readyState !== 1) {
     return errorResponse(
       res,
       'Database service is currently unavailable or disconnected. Please retry in a few moments.',

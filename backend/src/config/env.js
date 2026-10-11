@@ -1,9 +1,21 @@
-require('dotenv').config();
+const path = require('path');
+const dotenv = require('dotenv');
+
+// Load environment variables reliably regardless of process.cwd()
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+dotenv.config();
 
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const isProduction = NODE_ENV === 'production';
 
-// Validate mandatory configuration in production
+// Validate mandatory configuration
+if (!process.env.MONGODB_URI) {
+  throw new Error(
+    '[CRITICAL CONFIG ERROR]: MONGODB_URI is required. Configure your MongoDB connection string in backend/.env.'
+  );
+}
+
 if (isProduction) {
   if (
     !process.env.JWT_SECRET ||
@@ -12,11 +24,6 @@ if (isProduction) {
   ) {
     throw new Error(
       '[CRITICAL CONFIG ERROR]: JWT_SECRET must be explicitly configured with a secure key of at least 32 characters in production.'
-    );
-  }
-  if (!process.env.MONGODB_URI) {
-    throw new Error(
-      '[CRITICAL CONFIG ERROR]: MONGODB_URI environment variable is required in production.'
     );
   }
 }
@@ -28,7 +35,8 @@ const JWT_SECRET =
 module.exports = {
   PORT: parseInt(process.env.PORT, 10) || 5000,
   NODE_ENV,
-  MONGODB_URI: process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/campus_synq',
+  MONGODB_URI: process.env.MONGODB_URI,
+  DB_NAME: process.env.DB_NAME || 'campus_synq',
   JWT_SECRET,
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '7d',
   CLIENT_URL: process.env.CLIENT_URL || 'http://localhost:5173',

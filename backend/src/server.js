@@ -6,23 +6,33 @@ const mongoose = require('mongoose');
 
 const startServer = async () => {
   try {
-    await connectDB();
-
-    // Development seed accounts must be clearly separated from production initialization
-    if (NODE_ENV !== 'production' && NODE_ENV !== 'test') {
-      await seedFacultyPortalData();
-    } else if (NODE_ENV === 'production' && process.env.SEED_DEMO_DATA === 'true') {
-      console.warn('[SEED NOTICE]: Explicit SEED_DEMO_DATA requested in production.');
-      await seedFacultyPortalData();
-    }
-
     const server = app.listen(PORT, () => {
       console.log(`===============================================`);
-      console.log(` Campus Synq Admin Server running on port ${PORT}`);
+      console.log(` Campus Synq Server running on port ${PORT}`);
       console.log(` Environment: ${NODE_ENV}`);
       console.log(` API Endpoint: http://localhost:${PORT}/api/v1`);
+      console.log(` Health Check: http://localhost:${PORT}/api/v1/health`);
       console.log(`===============================================`);
     });
+
+    try {
+      await connectDB();
+
+      // Development seed accounts must be clearly separated from production initialization
+      if (NODE_ENV !== 'production' && NODE_ENV !== 'test') {
+        await seedFacultyPortalData();
+      } else if (NODE_ENV === 'production' && process.env.SEED_DEMO_DATA === 'true') {
+        console.warn('[SEED NOTICE]: Explicit SEED_DEMO_DATA requested in production.');
+        await seedFacultyPortalData();
+      }
+    } catch (dbError) {
+      console.error(
+        `[Startup Error]: Active database connection could not be established.\n` +
+        `[Startup Safety]: Database-dependent operations are paused to protect data integrity.\n` +
+        `[Startup Safety]: Local MongoDB fallback is DISABLED.\n` +
+        `[Startup Status]: Health check endpoint at /api/v1/health is active.`
+      );
+    }
 
     // Graceful shutdown
     const shutdown = () => {

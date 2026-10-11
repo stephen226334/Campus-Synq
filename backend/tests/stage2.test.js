@@ -4,6 +4,7 @@ const request = require('supertest');
 const mongoose = require('mongoose');
 const app = require('../src/app');
 const { MONGODB_URI } = require('../src/config/env');
+const connectDB = require('../src/config/db');
 
 // Models
 const Admin = require('../src/models/Admin');
@@ -31,7 +32,7 @@ let testTimetableId = '';
 
 test.before(async () => {
   if (mongoose.connection.readyState === 0) {
-    await mongoose.connect(MONGODB_URI);
+    await connectDB();
   }
 
   // Ensure an admin exists for auth
@@ -105,6 +106,9 @@ test.before(async () => {
 });
 
 test.after(async () => {
+  if (mongoose.connection.readyState !== 1) {
+    return;
+  }
   // Clean up all Stage 2 test records
   await Promise.all([
     TimetableEntry.deleteMany({ day: 'Monday' }),

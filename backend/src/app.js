@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const cors = require('cors');
 const morgan = require('morgan');
 const { CLIENT_URL, CORS_ORIGINS, NODE_ENV } = require('./config/env');
@@ -61,11 +62,21 @@ if (NODE_ENV !== 'test') {
 
 // Health check endpoint (always accessible regardless of DB state)
 app.get('/api/v1/health', (req, res) => {
+  const readyState = mongoose.connection.readyState;
+  const dbStatus = readyState === 1 ? 'connected' : readyState === 2 ? 'connecting' : 'disconnected';
+  const dbTarget = mongoose.connection.host
+    ? `${mongoose.connection.host}/${mongoose.connection.name || 'campus_synq'}`
+    : 'disconnected';
+
   res.status(200).json({
     status: 'online',
     product: 'Campus Synq',
     service: 'Academic Timetable Management API',
     environment: NODE_ENV,
+    database: {
+      status: dbStatus,
+      target: dbTarget
+    },
     timestamp: new Date().toISOString()
   });
 });

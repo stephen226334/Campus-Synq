@@ -70,17 +70,35 @@ async function main() {
   console.log(`${COLORS.bold}${COLORS.purple}==============================================================${COLORS.reset}\n`);
 
   // 1. Verify MongoDB Availability
-  process.stdout.write(`${COLORS.cyan}Checking local MongoDB on 127.0.0.1:27017... ${COLORS.reset}`);
-  const mongoOnline = await checkPort(27017, '127.0.0.1');
+  let mongoUri = '';
+  try {
+    const fs = require('fs');
+    const envPath = path.join(BACKEND_DIR, '.env');
+    if (fs.existsSync(envPath)) {
+      const envContent = fs.readFileSync(envPath, 'utf8');
+      const match = envContent.match(/^MONGODB_URI=(.+)$/m);
+      if (match) mongoUri = match[1].trim();
+    }
+  } catch {}
 
-  if (mongoOnline) {
-    console.log(`${COLORS.green}CONNECTED${COLORS.reset}`);
+  const isAtlas = mongoUri.includes('mongodb.net') || mongoUri.startsWith('mongodb+srv://');
+
+  if (isAtlas) {
+    console.log(`${COLORS.cyan}Database Target: ${COLORS.bold}MongoDB Atlas (Cloud Cluster)${COLORS.reset}`);
+    console.log(`${COLORS.green}Atlas Connection URI configured in backend/.env${COLORS.reset}\n`);
   } else {
-    console.log(`${COLORS.yellow}NOT DETECTED${COLORS.reset}`);
-    console.log(
-      `${COLORS.yellow}Warning: Local MongoDB on port 27017 did not respond.\n` +
-      `Please ensure MongoDB service is started (e.g. 'net start MongoDB' or mongod).${COLORS.reset}\n`
-    );
+    process.stdout.write(`${COLORS.cyan}Checking local MongoDB on 127.0.0.1:27017... ${COLORS.reset}`);
+    const mongoOnline = await checkPort(27017, '127.0.0.1');
+
+    if (mongoOnline) {
+      console.log(`${COLORS.green}CONNECTED${COLORS.reset}\n`);
+    } else {
+      console.log(`${COLORS.yellow}NOT DETECTED${COLORS.reset}`);
+      console.log(
+        `${COLORS.yellow}Warning: Local MongoDB on port 27017 did not respond.\n` +
+        `Please ensure local MongoDB is running or configure MongoDB Atlas in backend/.env.${COLORS.reset}\n`
+      );
+    }
   }
 
   console.log(`${COLORS.cyan}Launching services...${COLORS.reset}\n`);

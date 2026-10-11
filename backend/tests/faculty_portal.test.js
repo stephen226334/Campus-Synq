@@ -14,6 +14,7 @@ const TimetableEntry = require('../src/models/TimetableEntry');
 const Substitution = require('../src/models/Substitution');
 const { academicEvents, ACADEMIC_EVENTS } = require('../src/utils/eventEmitter');
 const { MONGODB_URI } = require('../src/config/env');
+const connectDB = require('../src/config/db');
 
 describe('Campus Synq — Faculty Portal & Substitution Test Suite', () => {
   let adminToken = '';
@@ -39,7 +40,7 @@ describe('Campus Synq — Faculty Portal & Substitution Test Suite', () => {
   before(async () => {
     // Ensure DB connection
     if (mongoose.connection.readyState === 0) {
-      await mongoose.connect(MONGODB_URI);
+      await connectDB();
     }
 
     // 1. Ensure Admin exists

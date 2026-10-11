@@ -4,6 +4,7 @@ const request = require('supertest');
 const mongoose = require('mongoose');
 const app = require('../src/app');
 const { MONGODB_URI } = require('../src/config/env');
+const connectDB = require('../src/config/db');
 
 // Models
 const Admin = require('../src/models/Admin');
@@ -26,7 +27,7 @@ let testAuditoriumId = '';
 test.before(async () => {
   // Connect to DB if not already connected
   if (mongoose.connection.readyState === 0) {
-    await mongoose.connect(MONGODB_URI);
+    await connectDB();
   }
   // Clear any existing test data to start clean
   await Promise.all([
@@ -41,6 +42,9 @@ test.before(async () => {
 });
 
 test.after(async () => {
+  if (mongoose.connection.readyState !== 1) {
+    return;
+  }
   // Clean up test records
   await Promise.all([
     Admin.deleteMany({ email: /test.*@campussynq\.test/ }),

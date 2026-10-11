@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "node tests/run_all_tests.js"
+    "test": "node tests/run_all_tests.js",
+    "migrate:atlas": "node src/scripts/migrateLocalToAtlas.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
