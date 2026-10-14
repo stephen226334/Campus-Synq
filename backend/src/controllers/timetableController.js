@@ -4,9 +4,12 @@ const Substitution = require('../models/Substitution');
 const Classroom = require('../models/Classroom');
 const Lab = require('../models/Lab');
 const Auditorium = require('../models/Auditorium');
+const ClassSection = require('../models/ClassSection');
+const Subject = require('../models/Subject');
 const { validateTimetableConflicts } = require('../services/conflictService');
 const { successResponse, errorResponse } = require('../utils/response');
 const { academicEvents, ACADEMIC_EVENTS } = require('../utils/eventEmitter');
+const { sortTimetableEntries } = require('../utils/timetableSort');
 
 /**
  * Helper to fetch room entity and snapshot details based on roomType
@@ -80,10 +83,11 @@ const getTimetableEntries = async (req, res, next) => {
       .populate('section', 'name')
       .populate('subject', 'name code')
       .populate('faculty', 'fullName facultyId officialEmail designation')
-      .sort({ day: 1, 'period.order': 1 })
       .lean();
 
-    return successResponse(res, entries, 'Timetable schedule retrieved');
+    const sortedEntries = sortTimetableEntries(entries);
+
+    return successResponse(res, sortedEntries, 'Timetable schedule retrieved');
   } catch (error) {
     next(error);
   }
@@ -127,8 +131,27 @@ const createTimetableEntry = async (req, res, next) => {
       faculty,
       roomType,
       roomId,
-      status = 'ACTIVE'
+      status = 'ACTIVE',
+      overrideConflict = false,
+      allowCombinedClass = false
     } = req.body;
+
+    // Validate section and subject belong to the selected semester
+    const sectionDoc = await ClassSection.findById(section);
+    if (!sectionDoc) {
+      return errorResponse(res, 'Selected Class Section was not found.', 400);
+    }
+    if (sectionDoc.semester.toString() !== semester.toString()) {
+      return errorResponse(res, `Selected Section '${sectionDoc.name}' does not belong to the selected Semester.`, 400);
+    }
+
+    const subjectDoc = await Subject.findById(subject);
+    if (!subjectDoc) {
+      return errorResponse(res, 'Selected Subject was not found.', 400);
+    }
+    if (subjectDoc.semester.toString() !== semester.toString()) {
+      return errorResponse(res, `Selected Subject '${subjectDoc.code} - ${subjectDoc.name}' does not belong to the selected Semester.`, 400);
+    }
 
     // Resolve room details
     const resolved = await resolveRoomDetails(roomType, roomId);
@@ -142,18 +165,34 @@ const createTimetableEntry = async (req, res, next) => {
       periodId: period,
       facultyId: faculty,
       roomId,
-      sectionId: section
+      sectionId: section,
+      subjectId: subject,
+      overrideConflict: Boolean(overrideConflict || allowCombinedClass),
+      allowCombinedClass: Boolean(overrideConflict || allowCombinedClass)
     });
 
     if (conflictResult.hasConflict) {
       return errorResponse(res, conflictResult.message, 409, {
-        conflictType: conflictResult.conflictType
+        conflictType: conflictResult.conflictType,
+        canOverride: conflictResult.canOverride || false,
+        existingEntry: conflictResult.details?.existingEntry || null,
+        proposedEntry: conflictResult.details?.proposedEntry || null
       }, {
         code: 'TIMETABLE_CONFLICT',
         recommendation: conflictResult.recommendation,
-        dataSaved: false
+        dataSaved: false,
+        details: {
+          conflictType: conflictResult.conflictType,
+          canOverride: conflictResult.canOverride || false,
+          existingEntry: conflictResult.details?.existingEntry || null,
+          proposedEntry: conflictResult.details?.proposedEntry || null
+        }
       });
     }
+
+    const isCombined = Boolean(
+      conflictResult.isCombinedClass || overrideConflict || allowCombinedClass
+    );
 
     // Create entry
     const entry = new TimetableEntry({
@@ -166,10 +205,18 @@ const createTimetableEntry = async (req, res, next) => {
       roomType,
       roomId,
       roomDetails: resolved.roomDetails,
-      status
+      status,
+      isCombinedClass: isCombined
     });
 
     await entry.save();
+
+    // If combined class was confirmed with an existing matching session, mark existing session as isCombinedClass: true as well
+    if (isCombined && conflictResult.combinedWithEntryId) {
+      await TimetableEntry.findByIdAndUpdate(conflictResult.combinedWithEntryId, {
+        isCombinedClass: true
+      });
+    }
 
     const populated = await TimetableEntry.findById(entry._id)
       .populate('period')
@@ -206,8 +253,27 @@ const updateTimetableEntry = async (req, res, next) => {
       faculty = entry.faculty,
       roomType = entry.roomType,
       roomId = entry.roomId,
-      status = entry.status
+      status = entry.status,
+      overrideConflict = false,
+      allowCombinedClass = false
     } = req.body;
+
+    // Validate section and subject belong to the selected semester
+    const sectionDoc = await ClassSection.findById(section);
+    if (!sectionDoc) {
+      return errorResponse(res, 'Selected Class Section was not found.', 400);
+    }
+    if (sectionDoc.semester.toString() !== semester.toString()) {
+      return errorResponse(res, `Selected Section '${sectionDoc.name}' does not belong to the selected Semester.`, 400);
+    }
+
+    const subjectDoc = await Subject.findById(subject);
+    if (!subjectDoc) {
+      return errorResponse(res, 'Selected Subject was not found.', 400);
+    }
+    if (subjectDoc.semester.toString() !== semester.toString()) {
+      return errorResponse(res, `Selected Subject '${subjectDoc.code} - ${subjectDoc.name}' does not belong to the selected Semester.`, 400);
+    }
 
     // Resolve room details if room changed or refresh
     const resolved = await resolveRoomDetails(roomType, roomId);
@@ -222,18 +288,34 @@ const updateTimetableEntry = async (req, res, next) => {
       facultyId: faculty,
       roomId,
       sectionId: section,
-      excludeEntryId: req.params.id
+      subjectId: subject,
+      excludeEntryId: req.params.id,
+      overrideConflict: Boolean(overrideConflict || allowCombinedClass),
+      allowCombinedClass: Boolean(overrideConflict || allowCombinedClass)
     });
 
     if (conflictResult.hasConflict) {
       return errorResponse(res, conflictResult.message, 409, {
-        conflictType: conflictResult.conflictType
+        conflictType: conflictResult.conflictType,
+        canOverride: conflictResult.canOverride || false,
+        existingEntry: conflictResult.details?.existingEntry || null,
+        proposedEntry: conflictResult.details?.proposedEntry || null
       }, {
         code: 'TIMETABLE_CONFLICT',
         recommendation: conflictResult.recommendation,
-        dataSaved: false
+        dataSaved: false,
+        details: {
+          conflictType: conflictResult.conflictType,
+          canOverride: conflictResult.canOverride || false,
+          existingEntry: conflictResult.details?.existingEntry || null,
+          proposedEntry: conflictResult.details?.proposedEntry || null
+        }
       });
     }
+
+    const isCombined = Boolean(
+      conflictResult.isCombinedClass || overrideConflict || allowCombinedClass || entry.isCombinedClass
+    );
 
     entry.day = day;
     entry.period = period;
@@ -245,8 +327,15 @@ const updateTimetableEntry = async (req, res, next) => {
     entry.roomId = roomId;
     entry.roomDetails = resolved.roomDetails;
     entry.status = status;
+    entry.isCombinedClass = isCombined;
 
     await entry.save();
+
+    if (isCombined && conflictResult.combinedWithEntryId) {
+      await TimetableEntry.findByIdAndUpdate(conflictResult.combinedWithEntryId, {
+        isCombinedClass: true
+      });
+    }
 
     const populated = await TimetableEntry.findById(entry._id)
       .populate('period')
@@ -396,15 +485,16 @@ const getTodayClasses = async (req, res, next) => {
       .populate('section', 'name')
       .populate('subject', 'name code')
       .populate('faculty', 'fullName facultyId designation')
-      .sort({ 'period.order': 1 })
       .lean();
+
+    const sortedClasses = sortTimetableEntries(classes);
 
     return successResponse(
       res,
       {
         weekday: todayWeekday,
-        count: classes.length,
-        classes
+        count: sortedClasses.length,
+        classes: sortedClasses
       },
       `Today's classes (${todayWeekday}) retrieved`
     );

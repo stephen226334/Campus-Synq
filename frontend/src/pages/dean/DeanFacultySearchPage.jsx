@@ -17,6 +17,7 @@ import {
 import deanApi from '../../api/dean';
 import { useToast } from '../../context/ToastContext';
 import { formatAcademicSection } from '../../utils/academicFormatter';
+import { parseTimeToMinutes, DAY_INDEX } from '../../utils/timetableSort';
 
 export const DeanFacultySearchPage = ({ onInspectEntity }) => {
   const { openEntityDrawer } = useOutletContext() || {};
@@ -40,6 +41,16 @@ export const DeanFacultySearchPage = ({ onInspectEntity }) => {
         faculty: targetFaculty,
         day: targetDay
       });
+      if (res?.data && Array.isArray(res.data.schedule)) {
+        res.data.schedule.sort((a, b) => {
+          const dayA = DAY_INDEX[a.day] !== undefined ? DAY_INDEX[a.day] : 999;
+          const dayB = DAY_INDEX[b.day] !== undefined ? DAY_INDEX[b.day] : 999;
+          if (dayA !== dayB) return dayA - dayB;
+          const startA = parseTimeToMinutes(a.time ? a.time.split('-')[0].trim() : '');
+          const startB = parseTimeToMinutes(b.time ? b.time.split('-')[0].trim() : '');
+          return startA - startB;
+        });
+      }
       setData(res.data);
     } catch (err) {
       showToast(err.response?.data?.message || 'Unable to retrieve faculty timetable', 'error');
@@ -79,7 +90,7 @@ export const DeanFacultySearchPage = ({ onInspectEntity }) => {
       <div className="dp-search-form-card">
         <form onSubmit={handleSubmit} className="dp-faculty-search-grid">
           <div className="dp-form-field">
-            <label htmlFor="faculty-input">Faculty Name or ID</label>
+            <label className="dp-form-label" htmlFor="faculty-input">Faculty Name or ID</label>
             <div className="dp-form-input-wrapper">
               <Users size={16} className="dp-form-icon" />
               <input
@@ -106,7 +117,7 @@ export const DeanFacultySearchPage = ({ onInspectEntity }) => {
           </div>
 
           <div className="dp-form-field">
-            <label htmlFor="faculty-day-filter">Day Filter (Optional)</label>
+            <label className="dp-form-label" htmlFor="faculty-day-filter">Day Filter (Optional)</label>
             <div className="dp-form-input-wrapper">
               <Calendar size={16} className="dp-form-icon" />
               <select
@@ -126,11 +137,12 @@ export const DeanFacultySearchPage = ({ onInspectEntity }) => {
           </div>
 
           <div className="dp-form-field dp-form-actions">
-            <label>&nbsp;</label>
+            <label className="dp-form-label dp-label-spacer">&nbsp;</label>
             <button
               type="submit"
-              className="dp-btn-primary dp-btn-search"
+              className="dp-btn-search dp-btn-primary"
               disabled={loading}
+              id="btn-search-faculty"
             >
               <Search size={16} />
               <span>{loading ? 'Searching...' : 'Search Faculty'}</span>
@@ -196,6 +208,7 @@ export const DeanFacultySearchPage = ({ onInspectEntity }) => {
                   onClick={() => {
                     if (inspectEntity) {
                       inspectEntity({
+                        category: 'FACULTY',
                         entityType: 'FACULTY',
                         id: data.faculty?._id,
                         title: data.faculty?.fullName,

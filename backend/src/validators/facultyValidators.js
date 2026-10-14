@@ -56,6 +56,12 @@ const facultyUpdateValidator = [
     .trim()
     .notEmpty()
     .withMessage('Full name cannot be empty'),
+  body('facultyId')
+    .optional()
+    .trim()
+    .notEmpty()
+    .withMessage('Faculty ID cannot be empty')
+    .toUpperCase(),
   body('personalEmail')
     .optional()
     .trim()

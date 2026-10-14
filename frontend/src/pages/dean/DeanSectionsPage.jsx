@@ -70,7 +70,7 @@ export const DeanSectionsPage = () => {
                   <span className={`dp-status-badge ${sec.status?.toLowerCase()}`}>{sec.status || 'ACTIVE'}</span>
                 </div>
 
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 4px 0', color: 'var(--dp-text)' }}>
+                <h3 style={{ fontSize: '1.125rem', fontWeight: 600, letterSpacing: '-0.01em', margin: '0 0 6px 0', color: 'var(--dp-text)', wordBreak: 'break-word', lineHeight: 1.35 }}>
                   {formatAcademicSection(sec.name, sec.semester?.name)}
                 </h3>
                 <p style={{ fontSize: '0.82rem', color: 'var(--dp-secondary)', margin: '0 0 16px 0' }}>

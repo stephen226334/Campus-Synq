@@ -30,6 +30,12 @@ export const SemestersPage = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
 
+  // Bulk delete states
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [bulkDeleteError, setBulkDeleteError] = useState(null);
+
   const { showToast, showError, showSuccess } = useToast();
 
   const fetchSemesters = useCallback(async () => {
@@ -141,6 +147,48 @@ export const SemestersPage = () => {
     }
   };
 
+  const handleSelectRow = (id) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const handleSelectAll = (visibleIds) => {
+    setSelectedIds(visibleIds);
+  };
+
+  const handleClearSelection = () => {
+    setSelectedIds([]);
+  };
+
+  const handleOpenBulkDelete = () => {
+    setBulkDeleteError(null);
+    setIsBulkDialogOpen(true);
+  };
+
+  const handleConfirmBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    setIsBulkDeleting(true);
+    setBulkDeleteError(null);
+    try {
+      const res = await api.delete('/admin/semesters/bulk', { ids: selectedIds });
+      showSuccess('Semesters Deleted', {
+        message: res.message || `${res.data?.deletedCount || selectedIds.length} semester(s) deleted successfully.`
+      });
+      if (res.data?.blockedCount > 0) {
+        setSelectedIds(res.data.blockedItems.map((b) => b.id));
+      } else {
+        setSelectedIds([]);
+      }
+      setIsBulkDialogOpen(false);
+      fetchSemesters();
+    } catch (err) {
+      const msg = err.message || 'Failed to delete selected semesters';
+      setBulkDeleteError(msg);
+      showError(err, { title: 'Cannot Delete Selected Semesters' });
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
   const columns = [
     {
       header: 'Semester Name',
@@ -207,6 +255,14 @@ export const SemestersPage = () => {
         onDeleteClick={handleOpenDelete}
         emptyTitle="No semesters registered yet"
         emptyDescription="Create your first academic term (e.g. Semester 1, 2026-2027)."
+        selectable={true}
+        selectedIds={selectedIds}
+        onSelectRow={handleSelectRow}
+        onSelectAll={handleSelectAll}
+        onClearSelection={handleClearSelection}
+        onBulkDelete={handleOpenBulkDelete}
+        isBulkDeleting={isBulkDeleting}
+        bulkDeleteLabel="Delete Selected"
       />
 
       {/* Create / Edit Modal */}
@@ -310,6 +366,17 @@ export const SemestersPage = () => {
         itemName={deletingItem ? `${deletingItem.name} (${deletingItem.academicYear})` : ''}
         isDeleting={isDeleting}
         error={deleteError}
+      />
+
+      {/* Bulk Delete Confirmation Modal */}
+      <ConfirmDialog
+        isOpen={isBulkDialogOpen}
+        onClose={() => setIsBulkDialogOpen(false)}
+        onConfirm={handleConfirmBulkDelete}
+        title="Delete Selected Semesters"
+        message={`Are you sure you want to delete ${selectedIds.length} selected semester(s)? This action cannot be undone.`}
+        isDeleting={isBulkDeleting}
+        error={bulkDeleteError}
       />
     </div>
   );

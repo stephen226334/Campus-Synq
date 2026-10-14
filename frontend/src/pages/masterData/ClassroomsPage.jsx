@@ -30,6 +30,12 @@ export const ClassroomsPage = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
 
+  // Bulk selection states
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [bulkDeleteError, setBulkDeleteError] = useState(null);
+
   const { showToast } = useToast();
 
   const fetchClassrooms = useCallback(async () => {
@@ -138,6 +144,46 @@ export const ClassroomsPage = () => {
     }
   };
 
+  const handleSelectRow = (id) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const handleSelectAll = (visibleIds) => {
+    setSelectedIds(visibleIds);
+  };
+
+  const handleClearSelection = () => {
+    setSelectedIds([]);
+  };
+
+  const handleOpenBulkDelete = () => {
+    setBulkDeleteError(null);
+    setIsBulkDialogOpen(true);
+  };
+
+  const handleConfirmBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    setIsBulkDeleting(true);
+    setBulkDeleteError(null);
+    try {
+      const res = await api.delete('/admin/classrooms/bulk', { ids: selectedIds });
+      showToast(res.message || `${res.data?.deletedCount || selectedIds.length} classrooms deleted successfully`, 'success');
+      if (res.data?.blockedCount > 0) {
+        setSelectedIds(res.data.blockedItems.map((b) => b.id));
+      } else {
+        setSelectedIds([]);
+      }
+      setIsBulkDialogOpen(false);
+      fetchClassrooms();
+    } catch (err) {
+      const msg = err.message || 'Failed to delete selected classrooms';
+      setBulkDeleteError(msg);
+      showToast(msg, 'error');
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
   const columns = [
     {
       header: 'Room Number',
@@ -204,6 +250,14 @@ export const ClassroomsPage = () => {
         onDeleteClick={handleOpenDelete}
         emptyTitle="No classrooms registered yet"
         emptyDescription="Register lecture spaces such as CS-101, CS-201, CS-301."
+        selectable={true}
+        selectedIds={selectedIds}
+        onSelectRow={handleSelectRow}
+        onSelectAll={handleSelectAll}
+        onClearSelection={handleClearSelection}
+        onBulkDelete={handleOpenBulkDelete}
+        isBulkDeleting={isBulkDeleting}
+        bulkDeleteLabel="Delete Selected"
       />
 
       {/* Create / Edit Modal */}
@@ -311,6 +365,17 @@ export const ClassroomsPage = () => {
         itemName={deletingItem ? `Room ${deletingItem.roomNumber}` : ''}
         isDeleting={isDeleting}
         error={deleteError}
+      />
+
+      {/* Bulk Delete Confirmation Modal */}
+      <ConfirmDialog
+        isOpen={isBulkDialogOpen}
+        onClose={() => setIsBulkDialogOpen(false)}
+        onConfirm={handleConfirmBulkDelete}
+        title="Delete Selected Classrooms"
+        message={`Are you sure you want to delete ${selectedIds.length} selected classroom(s)? This action cannot be undone.`}
+        isDeleting={isBulkDeleting}
+        error={bulkDeleteError}
       />
     </div>
   );

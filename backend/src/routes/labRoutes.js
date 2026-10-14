@@ -13,6 +13,7 @@ router.get('/', labController.getLabs);
 router.get('/:id', idParamValidator, validateMiddleware, labController.getLabById);
 router.post('/', labCreateValidator, validateMiddleware, labController.createLab);
 router.put('/:id', idParamValidator, labUpdateValidator, validateMiddleware, labController.updateLab);
+router.delete('/bulk', labController.bulkDeleteLabs);
 router.delete('/:id', idParamValidator, validateMiddleware, labController.deleteLab);
 
 module.exports = router;

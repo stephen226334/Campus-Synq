@@ -83,6 +83,7 @@ export function App() {
             <Routes>
               {/* Public Auth Routes */}
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/admin/login" element={<LoginPage />} />
               <Route path="/faculty/login" element={<LoginPage />} />
               <Route path="/dean/login" element={<DeanLoginPage />} />
               <Route path="/signup" element={<SignupPage />} />

@@ -15,6 +15,7 @@ import {
 import deanApi from '../../api/dean';
 import { useToast } from '../../context/ToastContext';
 import { formatAcademicSection } from '../../utils/academicFormatter';
+import { parseTimeToMinutes } from '../../utils/timetableSort';
 
 export const DeanRoomSearchPage = ({ onInspectEntity }) => {
   const { openEntityDrawer } = useOutletContext() || {};
@@ -39,6 +40,13 @@ export const DeanRoomSearchPage = ({ onInspectEntity }) => {
         room: targetRoom,
         day: targetDay
       });
+      if (res?.data && Array.isArray(res.data.timetable)) {
+        res.data.timetable.sort((a, b) => {
+          const startA = parseTimeToMinutes(a.time ? a.time.split('-')[0].trim() : '');
+          const startB = parseTimeToMinutes(b.time ? b.time.split('-')[0].trim() : '');
+          return startA - startB;
+        });
+      }
       setData(res.data);
     } catch (err) {
       showToast(err.response?.data?.message || 'Unable to retrieve room timetable', 'error');
@@ -131,7 +139,7 @@ export const DeanRoomSearchPage = ({ onInspectEntity }) => {
             <label className="dp-form-label dp-label-spacer" aria-hidden="true">&nbsp;</label>
             <button
               type="submit"
-              className="dp-btn-view-timetable"
+              className="dp-btn-search dp-btn-view-timetable"
               disabled={loading}
               aria-label="View Room Timetable"
             >
@@ -153,17 +161,41 @@ export const DeanRoomSearchPage = ({ onInspectEntity }) => {
           <div className="dp-room-table-card">
             <div className="dp-room-table-header">
               <div className="dp-room-title-meta">
-                <span className="dp-room-tag">ROOM {data.room?.roomNumber}</span>
-                <span className="dp-room-day-label">{data.room?.roomNumber} — {data.day} Timetable</span>
-                <span className="dp-room-cap-chip">Capacity: {data.room?.capacity} seats</span>
+                <h2 className="dp-room-title-heading">Room {data.room?.roomNumber}</h2>
+                <div className="dp-room-subtitle-meta">
+                  <span className="dp-room-day-name">{data.day}</span>
+                  <span className="dp-room-sep" aria-hidden="true">·</span>
+                  <span className="dp-room-capacity-info">Capacity: {data.room?.capacity || 60} seats</span>
+                </div>
               </div>
-              <div className="dp-room-stats-summary">
-                <span className="dp-summary-chip occupied">
-                  Occupied: {data.timetable?.filter((t) => t.status === 'OCCUPIED').length}
-                </span>
-                <span className="dp-summary-chip free">
-                  Free: {data.timetable?.filter((t) => t.status === 'FREE').length}
-                </span>
+
+              <div className="dp-room-header-controls">
+                <div className="dp-room-stats-summary">
+                  <span className="dp-summary-chip occupied">
+                    Occupied: {data.timetable?.filter((t) => t.status === 'OCCUPIED').length || 0}
+                  </span>
+                  <span className="dp-summary-chip free">
+                    Free: {data.timetable?.filter((t) => t.status === 'FREE').length || 0}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="dp-btn-secondary"
+                  onClick={() => {
+                    if (inspectEntity) {
+                      inspectEntity({
+                        category: 'CLASSROOM',
+                        id: data.room?._id || data.room?.roomNumber,
+                        title: `Room ${data.room?.roomNumber}`,
+                        details: data.room
+                      });
+                    }
+                  }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <ExternalLink size={14} />
+                  <span>View Room Details</span>
+                </button>
               </div>
             </div>
 
@@ -173,56 +205,64 @@ export const DeanRoomSearchPage = ({ onInspectEntity }) => {
                   <tr>
                     <th>PERIOD</th>
                     <th>TIME</th>
-                    <th>CLASS</th>
+                    <th>CLASS / SECTION</th>
                     <th>SUBJECT</th>
                     <th>FACULTY</th>
                     <th>STATUS</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.timetable?.map((row) => (
-                    <tr
-                      key={row.periodId || row.period}
-                      className={row.status === 'OCCUPIED' ? 'dp-row-occupied' : 'dp-row-free'}
-                    >
-                      <td className="dp-td-period">
-                        <span className="dp-period-badge">{row.period}</span>
-                      </td>
-                      <td className="dp-td-time">
-                        <span className="dp-time-text">{row.time}</span>
-                      </td>
-                      <td className="dp-td-class">
-                        {row.className !== '—' ? (
-                          <strong>{formatAcademicSection(row.className)}</strong>
-                        ) : (
-                          <span className="dp-text-muted">—</span>
-                        )}
-                      </td>
-                      <td className="dp-td-subject">
-                        {row.subject !== '—' ? (
-                          <div className="dp-subject-cell">
-                            <span>{row.subject}</span>
-                            {row.subjectCode && <span className="dp-code-chip">{row.subjectCode}</span>}
-                          </div>
-                        ) : (
-                          <span className="dp-text-muted">—</span>
-                        )}
-                      </td>
-                      <td className="dp-td-faculty">
-                        {row.faculty !== '—' ? (
-                          <span className="dp-faculty-text">{row.faculty}</span>
-                        ) : (
-                          <span className="dp-text-muted">—</span>
-                        )}
-                      </td>
-                      <td className="dp-td-status">
-                        <span className={`dp-status-badge ${row.status.toLowerCase()}`}>
-                          <span className={`dp-status-dot ${row.status === 'OCCUPIED' ? 'red' : 'green'}`}></span>
-                          <span>{row.status}</span>
-                        </span>
+                  {(!data.timetable || data.timetable.length === 0) ? (
+                    <tr>
+                      <td colSpan="6" style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--dp-secondary)' }}>
+                        No timetable records found for Room {data.room?.roomNumber} on {data.day}.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    data.timetable.map((row) => (
+                      <tr
+                        key={row.periodId || row.period}
+                        className={row.status === 'OCCUPIED' ? 'dp-row-occupied' : 'dp-row-free'}
+                      >
+                        <td className="dp-td-period">
+                          <span className="dp-period-badge">{row.period}</span>
+                        </td>
+                        <td className="dp-td-time">
+                          <span className="dp-time-text">{row.time}</span>
+                        </td>
+                        <td className="dp-td-class">
+                          {row.className && row.className !== '—' ? (
+                            <strong>{formatAcademicSection(row.className)}</strong>
+                          ) : (
+                            <span className="dp-text-muted">—</span>
+                          )}
+                        </td>
+                        <td className="dp-td-subject">
+                          {row.subject && row.subject !== '—' ? (
+                            <div className="dp-subject-cell">
+                              <span>{row.subject}</span>
+                              {row.subjectCode && <span className="dp-code-chip">{row.subjectCode}</span>}
+                            </div>
+                          ) : (
+                            <span className="dp-text-muted">—</span>
+                          )}
+                        </td>
+                        <td className="dp-td-faculty">
+                          {row.faculty && row.faculty !== '—' ? (
+                            <span className="dp-faculty-text">{row.faculty}</span>
+                          ) : (
+                            <span className="dp-text-muted">—</span>
+                          )}
+                        </td>
+                        <td className="dp-td-status">
+                          <span className={`dp-status-badge ${row.status?.toLowerCase() || 'free'}`}>
+                            <span className={`dp-status-dot ${row.status === 'OCCUPIED' ? 'red' : 'green'}`}></span>
+                            <span>{row.status || 'FREE'}</span>
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>

@@ -17,6 +17,7 @@ router.get('/', periodController.getPeriods);
 router.get('/:id', idParamValidator, validateMiddleware, periodController.getPeriodById);
 router.post('/', periodCreateValidator, validateMiddleware, periodController.createPeriod);
 router.put('/:id', idParamValidator, periodUpdateValidator, validateMiddleware, periodController.updatePeriod);
+router.delete('/bulk', periodController.bulkDeletePeriods);
 router.delete('/:id', idParamValidator, validateMiddleware, periodController.deletePeriod);
 
 module.exports = router;

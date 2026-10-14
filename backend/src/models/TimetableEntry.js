@@ -51,6 +51,10 @@ const timetableEntrySchema = new mongoose.Schema(
       enum: ['ACTIVE', 'CANCELLED', 'RESCHEDULED'],
       default: 'ACTIVE'
     },
+    isCombinedClass: {
+      type: Boolean,
+      default: false
+    },
     isSubstituted: {
       type: Boolean,
       default: false

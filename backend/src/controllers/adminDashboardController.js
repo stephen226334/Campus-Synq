@@ -7,6 +7,7 @@ const Auditorium = require('../models/Auditorium');
 const Faculty = require('../models/Faculty');
 const TimetableEntry = require('../models/TimetableEntry');
 const { successResponse } = require('../utils/response');
+const { sortTimetableEntries } = require('../utils/timetableSort');
 
 /**
  * Get Real Database Counts and Operational Timelines (Stage 1 + Stage 2)
@@ -48,7 +49,6 @@ const getDashboardStats = async (req, res, next) => {
         .populate('faculty', 'fullName facultyId designation')
         .populate('section', 'name')
         .populate('semester', 'name')
-        .sort({ 'period.order': 1 })
         .lean(),
       Subject.find()
         .populate('semester', 'name academicYear')
@@ -85,7 +85,7 @@ const getDashboardStats = async (req, res, next) => {
         },
         todaySchedule: {
           weekday: todayWeekday,
-          classes: todayClasses
+          classes: sortTimetableEntries(todayClasses)
         },
         recentData: {
           subjects: recentSubjects,

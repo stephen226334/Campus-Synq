@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Lab = require('../models/Lab');
 const TimetableEntry = require('../models/TimetableEntry');
 const { successResponse, errorResponse } = require('../utils/response');
@@ -142,10 +143,78 @@ const deleteLab = async (req, res, next) => {
   }
 };
 
+/**
+ * Bulk delete labs with referential integrity guard
+ * DELETE /api/v1/admin/labs/bulk
+ */
+const bulkDeleteLabs = async (req, res, next) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return errorResponse(res, 'Please provide an array of lab IDs to delete.', 400);
+    }
+
+    const invalidIds = ids.filter((id) => !id || !mongoose.Types.ObjectId.isValid(id));
+    if (invalidIds.length > 0) {
+      return errorResponse(res, 'One or more lab IDs are invalid.', 400);
+    }
+
+    const uniqueIds = Array.from(new Set(ids.map((id) => id.toString())));
+    const labs = await Lab.find({ _id: { $in: uniqueIds } });
+    if (labs.length === 0) {
+      return errorResponse(res, 'None of the specified labs were found.', 404);
+    }
+
+    // Check usage in TimetableEntry
+    const referencedRoomIds = await TimetableEntry.find({ roomId: { $in: uniqueIds } }).distinct('roomId');
+    const referencedSet = new Set(referencedRoomIds.map((id) => id.toString()));
+
+    const blockedItems = labs.filter((l) => referencedSet.has(l._id.toString()));
+    const safeToDelete = labs.filter((l) => !referencedSet.has(l._id.toString()));
+
+    if (safeToDelete.length === 0) {
+      return errorResponse(
+        res,
+        `Cannot delete any of the selected laboratory(ies). All ${blockedItems.length} selected lab(s) are currently assigned to active timetable sessions.`,
+        400,
+        null,
+        {
+          code: 'REFERENTIAL_INTEGRITY_VIOLATION',
+          details: { blockedLabs: blockedItems.map((l) => `${l.labName} [${l.labNumber}]`) },
+          recommendation: 'Reassign or remove linked timetable sessions before deleting these laboratories.'
+        }
+      );
+    }
+
+    const safeIds = safeToDelete.map((l) => l._id);
+    const deleteResult = await Lab.deleteMany({ _id: { $in: safeIds } });
+
+    const isPartial = blockedItems.length > 0;
+    const message = isPartial
+      ? `${deleteResult.deletedCount} lab(s) deleted successfully. ${blockedItems.length} lab(s) could not be deleted because they are assigned to timetable sessions.`
+      : `${deleteResult.deletedCount} lab(s) deleted successfully.`;
+
+    return successResponse(
+      res,
+      {
+        deletedCount: deleteResult.deletedCount,
+        deletedIds: safeIds.map((id) => id.toString()),
+        blockedCount: blockedItems.length,
+        blockedItems: blockedItems.map((l) => ({ id: l._id, labName: l.labName, labNumber: l.labNumber })),
+        isPartial
+      },
+      message
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getLabs,
   getLabById,
   createLab,
   updateLab,
-  deleteLab
+  deleteLab,
+  bulkDeleteLabs
 };

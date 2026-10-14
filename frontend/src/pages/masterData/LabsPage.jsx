@@ -31,6 +31,12 @@ export const LabsPage = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
 
+  // Bulk selection states
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [bulkDeleteError, setBulkDeleteError] = useState(null);
+
   const { showToast } = useToast();
 
   const fetchLabs = useCallback(async () => {
@@ -145,6 +151,46 @@ export const LabsPage = () => {
     }
   };
 
+  const handleSelectRow = (id) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const handleSelectAll = (visibleIds) => {
+    setSelectedIds(visibleIds);
+  };
+
+  const handleClearSelection = () => {
+    setSelectedIds([]);
+  };
+
+  const handleOpenBulkDelete = () => {
+    setBulkDeleteError(null);
+    setIsBulkDialogOpen(true);
+  };
+
+  const handleConfirmBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    setIsBulkDeleting(true);
+    setBulkDeleteError(null);
+    try {
+      const res = await api.delete('/admin/labs/bulk', { ids: selectedIds });
+      showToast(res.message || `${res.data?.deletedCount || selectedIds.length} labs deleted successfully`, 'success');
+      if (res.data?.blockedCount > 0) {
+        setSelectedIds(res.data.blockedItems.map((b) => b.id));
+      } else {
+        setSelectedIds([]);
+      }
+      setIsBulkDialogOpen(false);
+      fetchLabs();
+    } catch (err) {
+      const msg = err.message || 'Failed to delete selected labs';
+      setBulkDeleteError(msg);
+      showToast(msg, 'error');
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
   const columns = [
     {
       header: 'Lab Name',
@@ -189,6 +235,14 @@ export const LabsPage = () => {
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         searchPlaceholder="Search by lab name or number (e.g. LAB-01)..."
+        selectable
+        selectedIds={selectedIds}
+        onSelectRow={handleSelectRow}
+        onSelectAll={handleSelectAll}
+        onClearSelection={handleClearSelection}
+        onBulkDelete={handleOpenBulkDelete}
+        isBulkDeleting={isBulkDeleting}
+        bulkDeleteLabel="Delete Selected Labs"
         filters={
           <select
             className="form-select table-filter-select"
@@ -330,6 +384,17 @@ export const LabsPage = () => {
         itemName={deletingItem ? `${deletingItem.labName} (${deletingItem.labNumber})` : ''}
         isDeleting={isDeleting}
         error={deleteError}
+      />
+
+      {/* Bulk Delete Confirmation Modal */}
+      <ConfirmDialog
+        isOpen={isBulkDialogOpen}
+        onClose={() => setIsBulkDialogOpen(false)}
+        onConfirm={handleConfirmBulkDelete}
+        title="Bulk Delete Laboratories"
+        itemName={`${selectedIds.length} selected laboratories`}
+        isDeleting={isBulkDeleting}
+        error={bulkDeleteError}
       />
     </div>
   );

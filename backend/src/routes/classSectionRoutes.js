@@ -13,6 +13,7 @@ router.get('/', classSectionController.getClassSections);
 router.get('/:id', idParamValidator, validateMiddleware, classSectionController.getClassSectionById);
 router.post('/', classSectionCreateValidator, validateMiddleware, classSectionController.createClassSection);
 router.put('/:id', idParamValidator, classSectionUpdateValidator, validateMiddleware, classSectionController.updateClassSection);
+router.delete('/bulk', classSectionController.bulkDeleteClassSections);
 router.delete('/:id', idParamValidator, validateMiddleware, classSectionController.deleteClassSection);
 
 module.exports = router;

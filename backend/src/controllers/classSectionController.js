@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const ClassSection = require('../models/ClassSection');
 const Semester = require('../models/Semester');
 const TimetableEntry = require('../models/TimetableEntry');
@@ -171,10 +172,78 @@ const deleteClassSection = async (req, res, next) => {
   }
 };
 
+/**
+ * Bulk delete class sections with referential integrity guard
+ * DELETE /api/v1/admin/class-sections/bulk
+ */
+const bulkDeleteClassSections = async (req, res, next) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return errorResponse(res, 'Please provide an array of class section IDs to delete.', 400);
+    }
+
+    const invalidIds = ids.filter((id) => !id || !mongoose.Types.ObjectId.isValid(id));
+    if (invalidIds.length > 0) {
+      return errorResponse(res, 'One or more class section IDs are invalid.', 400);
+    }
+
+    const uniqueIds = Array.from(new Set(ids.map((id) => id.toString())));
+    const sections = await ClassSection.find({ _id: { $in: uniqueIds } });
+    if (sections.length === 0) {
+      return errorResponse(res, 'None of the specified class sections were found.', 404);
+    }
+
+    // Check usage in TimetableEntry
+    const referencedSectionIds = await TimetableEntry.find({ section: { $in: uniqueIds } }).distinct('section');
+    const referencedSet = new Set(referencedSectionIds.map((id) => id.toString()));
+
+    const blockedItems = sections.filter((s) => referencedSet.has(s._id.toString()));
+    const safeToDelete = sections.filter((s) => !referencedSet.has(s._id.toString()));
+
+    if (safeToDelete.length === 0) {
+      return errorResponse(
+        res,
+        `Cannot delete any of the selected class section(s). All ${blockedItems.length} selected section(s) are currently scheduled in active timetable sessions.`,
+        400,
+        null,
+        {
+          code: 'REFERENTIAL_INTEGRITY_VIOLATION',
+          details: { blockedSections: blockedItems.map((s) => s.name) },
+          recommendation: 'Reassign or remove linked timetable sessions before deleting these class sections.'
+        }
+      );
+    }
+
+    const safeIds = safeToDelete.map((s) => s._id);
+    const deleteResult = await ClassSection.deleteMany({ _id: { $in: safeIds } });
+
+    const isPartial = blockedItems.length > 0;
+    const message = isPartial
+      ? `${deleteResult.deletedCount} class section(s) deleted successfully. ${blockedItems.length} section(s) could not be deleted because they are assigned to timetable sessions.`
+      : `${deleteResult.deletedCount} class section(s) deleted successfully.`;
+
+    return successResponse(
+      res,
+      {
+        deletedCount: deleteResult.deletedCount,
+        deletedIds: safeIds.map((id) => id.toString()),
+        blockedCount: blockedItems.length,
+        blockedItems: blockedItems.map((s) => ({ id: s._id, name: s.name })),
+        isPartial
+      },
+      message
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getClassSections,
   getClassSectionById,
   createClassSection,
   updateClassSection,
-  deleteClassSection
+  deleteClassSection,
+  bulkDeleteClassSections
 };

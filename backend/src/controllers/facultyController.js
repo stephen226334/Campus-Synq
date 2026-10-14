@@ -1,9 +1,11 @@
+const mongoose = require('mongoose');
 const Faculty = require('../models/Faculty');
 const TimetableEntry = require('../models/TimetableEntry');
 const { generateOfficialEmail, DEFAULT_PASSWORD } = require('../services/facultyCredentialService');
 const { sendFacultyCredentialsEmail } = require('../services/emailService');
 const { successResponse, errorResponse } = require('../utils/response');
 const { academicEvents, ACADEMIC_EVENTS } = require('../utils/eventEmitter');
+const { sortTimetableEntries } = require('../utils/timetableSort');
 
 /**
  * Get all faculty members with search and filter
@@ -62,11 +64,10 @@ const getFacultyById = async (req, res, next) => {
       .populate('subject', 'name code')
       .populate('section', 'name')
       .populate('semester', 'name academicYear')
-      .sort({ day: 1, 'period.order': 1 })
       .lean();
 
     const facultyData = faculty.toJSON();
-    facultyData.timetable = timetable;
+    facultyData.timetable = sortTimetableEntries(timetable);
 
     return successResponse(res, facultyData, 'Faculty details retrieved');
   } catch (error) {
@@ -169,6 +170,7 @@ const updateFaculty = async (req, res, next) => {
   try {
     const {
       fullName,
+      facultyId,
       personalEmail,
       phone,
       designation,
@@ -181,6 +183,18 @@ const updateFaculty = async (req, res, next) => {
     const faculty = await Faculty.findById(req.params.id);
     if (!faculty) {
       return errorResponse(res, 'Faculty member not found', 404);
+    }
+
+    if (facultyId && facultyId.trim().toUpperCase() !== faculty.facultyId) {
+      const formattedFacultyId = facultyId.trim().toUpperCase();
+      const duplicateId = await Faculty.findOne({
+        _id: { $ne: req.params.id },
+        facultyId: formattedFacultyId
+      });
+      if (duplicateId) {
+        return errorResponse(res, `Faculty ID '${formattedFacultyId}' is already registered to another faculty member.`, 409);
+      }
+      faculty.facultyId = formattedFacultyId;
     }
 
     if (personalEmail && personalEmail.trim().toLowerCase() !== faculty.personalEmail) {
@@ -317,10 +331,79 @@ const getFacultyTimetable = async (req, res, next) => {
       .populate('subject', 'name code')
       .populate('section', 'name')
       .populate('semester', 'name academicYear')
-      .sort({ day: 1, 'period.order': 1 })
       .lean();
 
-    return successResponse(res, { faculty, timetable: entries }, 'Faculty timetable retrieved');
+    const sortedEntries = sortTimetableEntries(entries);
+
+    return successResponse(res, { faculty, timetable: sortedEntries }, 'Faculty timetable retrieved');
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Bulk delete faculty members with referential integrity guard
+ * DELETE /api/v1/admin/faculty/bulk
+ */
+const bulkDeleteFaculty = async (req, res, next) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return errorResponse(res, 'Please provide an array of faculty IDs to delete.', 400);
+    }
+
+    const invalidIds = ids.filter((id) => !id || !mongoose.Types.ObjectId.isValid(id));
+    if (invalidIds.length > 0) {
+      return errorResponse(res, 'One or more faculty IDs are invalid.', 400);
+    }
+
+    const uniqueIds = Array.from(new Set(ids.map((id) => id.toString())));
+    const facultyMembers = await Faculty.find({ _id: { $in: uniqueIds } });
+    if (facultyMembers.length === 0) {
+      return errorResponse(res, 'None of the specified faculty members were found.', 404);
+    }
+
+    // Check usage in TimetableEntry (primary and substitute)
+    const referencedPrimary = await TimetableEntry.find({ faculty: { $in: uniqueIds }, status: 'ACTIVE' }).distinct('faculty');
+    const referencedSub = await TimetableEntry.find({ substituteFaculty: { $in: uniqueIds }, status: 'ACTIVE' }).distinct('substituteFaculty');
+    const allReferenced = new Set([...referencedPrimary, ...referencedSub].map((id) => id.toString()));
+
+    const blockedItems = facultyMembers.filter((f) => allReferenced.has(f._id.toString()));
+    const safeToDelete = facultyMembers.filter((f) => !allReferenced.has(f._id.toString()));
+
+    if (safeToDelete.length === 0) {
+      return errorResponse(
+        res,
+        `Cannot delete selected faculty member(s). All ${blockedItems.length} selected educator(s) are currently assigned to active timetable sessions. Please reassign their sessions or change their status to INACTIVE.`,
+        400,
+        null,
+        {
+          code: 'REFERENTIAL_INTEGRITY_VIOLATION',
+          details: { blockedFaculty: blockedItems.map((f) => `${f.fullName} (${f.facultyId})`) },
+          recommendation: 'Reassign active timetable sessions or deactivate faculty status instead.'
+        }
+      );
+    }
+
+    const safeIds = safeToDelete.map((f) => f._id);
+    const deleteResult = await Faculty.deleteMany({ _id: { $in: safeIds } });
+
+    const isPartial = blockedItems.length > 0;
+    const message = isPartial
+      ? `${deleteResult.deletedCount} faculty member(s) deleted successfully. ${blockedItems.length} member(s) were blocked due to active timetable assignments.`
+      : `${deleteResult.deletedCount} faculty member(s) deleted successfully.`;
+
+    return successResponse(
+      res,
+      {
+        deletedCount: deleteResult.deletedCount,
+        deletedIds: safeIds.map((id) => id.toString()),
+        blockedCount: blockedItems.length,
+        blockedItems: blockedItems.map((f) => ({ id: f._id, fullName: f.fullName, facultyId: f.facultyId })),
+        isPartial
+      },
+      message
+    );
   } catch (error) {
     next(error);
   }
@@ -332,6 +415,7 @@ module.exports = {
   createFaculty,
   updateFaculty,
   deleteFaculty,
+  bulkDeleteFaculty,
   resendCredentials,
   getFacultyTimetable
 };

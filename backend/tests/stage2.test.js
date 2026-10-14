@@ -56,7 +56,12 @@ test.before(async () => {
 
   // Clean up prior S2 test fixtures if left over from a previous interrupted run
   await Promise.all([
-    TimetableEntry.deleteMany({ day: 'Monday' }),
+    TimetableEntry.deleteMany({
+      $or: [
+        { 'roomDetails.roomNumber': 'S2-CS-501' },
+        { 'roomDetails.roomNumber': 'S2-LAB-99' }
+      ]
+    }),
     Faculty.deleteMany({ facultyId: /^S2-FAC/ }),
     Period.deleteMany({ periodNumber: /^S2-P/ }),
     Semester.deleteMany({ name: 'S2 Test Semester' }),
@@ -111,7 +116,12 @@ test.after(async () => {
   }
   // Clean up all Stage 2 test records
   await Promise.all([
-    TimetableEntry.deleteMany({ day: 'Monday' }),
+    TimetableEntry.deleteMany({
+      $or: [
+        { 'roomDetails.roomNumber': 'S2-CS-501' },
+        { 'roomDetails.roomNumber': 'S2-LAB-99' }
+      ]
+    }),
     Faculty.deleteMany({ facultyId: /^S2-FAC/ }),
     Period.deleteMany({ periodNumber: /^S2-P/ }),
     Semester.deleteMany({ name: 'S2 Test Semester' }),

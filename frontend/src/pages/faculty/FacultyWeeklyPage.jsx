@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import LoadingSkeleton from '../../components/common/LoadingSkeleton';
 import SubstitutionModal from '../../components/faculty/SubstitutionModal';
 import useRealtimeEvents from '../../hooks/useRealtimeEvents';
+import { sortPeriodsChronologically, sortTimetableEntries } from '../../utils/timetableSort';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -29,7 +30,7 @@ export const FacultyWeeklyPage = () => {
     try {
       const res = await facultyApi.getWeeklyTimetable();
       if (res && res.data) {
-        setWeeklySessions(res.data);
+        setWeeklySessions(sortTimetableEntries(res.data));
       }
     } catch (err) {
       console.error('Failed to load weekly schedule:', err);
@@ -45,7 +46,7 @@ export const FacultyWeeklyPage = () => {
 
   useRealtimeEvents(() => fetchSchedule(true));
 
-  // Extract distinct periods sorted by order
+  // Extract distinct periods sorted chronologically by start time
   const distinctPeriods = useMemo(() => {
     const map = new Map();
     weeklySessions.forEach((s) => {
@@ -54,7 +55,7 @@ export const FacultyWeeklyPage = () => {
       }
     });
 
-    return Array.from(map.values()).sort((a, b) => (a.order || 0) - (b.order || 0));
+    return sortPeriodsChronologically(Array.from(map.values()));
   }, [weeklySessions]);
 
   // Lookup map: `${day}_${periodId}` -> session

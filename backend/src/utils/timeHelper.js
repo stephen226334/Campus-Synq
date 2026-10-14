@@ -174,12 +174,23 @@ const getCurrentAcademicStatus = (period, referenceDate = new Date()) => {
   }
 };
 
+const {
+  parseTimeToMinutes,
+  parsePeriodNumber,
+  sortPeriodsChronologically,
+  sortTimetableEntries
+} = require('./timetableSort');
+
 module.exports = {
   DAYS_OF_WEEK,
   parse12HourTimeToMinutes,
+  parseTimeToMinutes,
+  parsePeriodNumber,
   format12HourTime,
   formatAcademicDate,
   getPeriodStatus,
   findPeriodForTime,
-  getCurrentAcademicStatus
+  getCurrentAcademicStatus,
+  sortPeriodsChronologically,
+  sortTimetableEntries
 };

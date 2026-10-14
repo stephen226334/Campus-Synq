@@ -6,6 +6,11 @@ import ConfirmDialog from '../../components/common/ConfirmDialog';
 import Badge from '../../components/common/Badge';
 import { useToast } from '../../context/ToastContext';
 import { Loader2, Clock } from 'lucide-react';
+import { sortPeriodsChronologically, parseTimeToMinutes } from '../../utils/timetableSort';
+
+const sortPeriodsAcademic = (list) => {
+  return sortPeriodsChronologically(list);
+};
 
 export const PeriodsPage = () => {
   const [periods, setPeriods] = useState([]);
@@ -31,6 +36,12 @@ export const PeriodsPage = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
 
+  // Bulk selection states
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [bulkDeleteError, setBulkDeleteError] = useState(null);
+
   const { showToast } = useToast();
 
   const fetchPeriods = useCallback(async () => {
@@ -41,7 +52,7 @@ export const PeriodsPage = () => {
 
       const res = await api.get('/admin/periods', params);
       if (res && res.data) {
-        setPeriods(res.data);
+        setPeriods(sortPeriodsAcademic(res.data));
       }
     } catch (err) {
       showToast(err.message || 'Failed to load periods', 'error');
@@ -85,8 +96,19 @@ export const PeriodsPage = () => {
   const validateForm = () => {
     const errs = {};
     if (!formData.periodNumber.trim()) errs.periodNumber = 'Period number is required (e.g. P1, P2)';
-    if (!formData.startTime.trim()) errs.startTime = 'Start time is required (e.g. 9:00 AM)';
-    if (!formData.endTime.trim()) errs.endTime = 'End time is required (e.g. 9:50 AM)';
+    if (!formData.startTime.trim()) {
+      errs.startTime = 'Start time is required (e.g. 9:00 AM)';
+    }
+    if (!formData.endTime.trim()) {
+      errs.endTime = 'End time is required (e.g. 9:50 AM)';
+    }
+    if (formData.startTime.trim() && formData.endTime.trim()) {
+      const startM = parseTimeToMinutes(formData.startTime);
+      const endM = parseTimeToMinutes(formData.endTime);
+      if (startM >= endM) {
+        errs.endTime = 'Period start time must be earlier than end time';
+      }
+    }
     setFormErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -145,6 +167,46 @@ export const PeriodsPage = () => {
     }
   };
 
+  const handleSelectRow = (id) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const handleSelectAll = (visibleIds) => {
+    setSelectedIds(visibleIds);
+  };
+
+  const handleClearSelection = () => {
+    setSelectedIds([]);
+  };
+
+  const handleOpenBulkDelete = () => {
+    setBulkDeleteError(null);
+    setIsBulkDialogOpen(true);
+  };
+
+  const handleConfirmBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    setIsBulkDeleting(true);
+    setBulkDeleteError(null);
+    try {
+      const res = await api.delete('/admin/periods/bulk', { ids: selectedIds });
+      showToast(res.message || `${res.data?.deletedCount || selectedIds.length} periods deleted successfully`, 'success');
+      if (res.data?.blockedCount > 0) {
+        setSelectedIds(res.data.blockedItems.map((b) => b.id));
+      } else {
+        setSelectedIds([]);
+      }
+      setIsBulkDialogOpen(false);
+      fetchPeriods();
+    } catch (err) {
+      const msg = err.message || 'Failed to delete selected periods';
+      setBulkDeleteError(msg);
+      showToast(msg, 'error');
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
   const columns = [
     {
       header: 'Period Slot',
@@ -196,6 +258,14 @@ export const PeriodsPage = () => {
         columns={columns}
         isLoading={isLoading}
         loadingMessage="Loading period intervals..."
+        selectable
+        selectedIds={selectedIds}
+        onSelectRow={handleSelectRow}
+        onSelectAll={handleSelectAll}
+        onClearSelection={handleClearSelection}
+        onBulkDelete={handleOpenBulkDelete}
+        isBulkDeleting={isBulkDeleting}
+        bulkDeleteLabel="Delete Selected Periods"
         filters={
           <select
             className="form-select table-filter-select"
@@ -355,6 +425,17 @@ export const PeriodsPage = () => {
         itemName={deletingItem ? `${deletingItem.periodNumber} (${deletingItem.startTime} - ${deletingItem.endTime})` : ''}
         isDeleting={isDeleting}
         error={deleteError}
+      />
+
+      {/* Bulk Delete Confirmation Modal */}
+      <ConfirmDialog
+        isOpen={isBulkDialogOpen}
+        onClose={() => setIsBulkDialogOpen(false)}
+        onConfirm={handleConfirmBulkDelete}
+        title="Bulk Delete Period Intervals"
+        itemName={`${selectedIds.length} selected period intervals`}
+        isDeleting={isBulkDeleting}
+        error={bulkDeleteError}
       />
     </div>
   );

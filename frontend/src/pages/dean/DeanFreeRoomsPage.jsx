@@ -79,7 +79,7 @@ export const DeanFreeRoomsPage = ({ onInspectEntity }) => {
       <div className="dp-search-form-card">
         <form onSubmit={handleSubmit} className="dp-free-rooms-grid">
           <div className="dp-form-field">
-            <label htmlFor="free-day-select">Day</label>
+            <label className="dp-form-label" htmlFor="free-day-select">Day</label>
             <div className="dp-form-input-wrapper">
               <Calendar size={16} className="dp-form-icon" />
               <select
@@ -95,7 +95,7 @@ export const DeanFreeRoomsPage = ({ onInspectEntity }) => {
           </div>
 
           <div className="dp-form-field">
-            <label htmlFor="free-time-select">Time</label>
+            <label className="dp-form-label" htmlFor="free-time-select">Time</label>
             <div className="dp-form-input-wrapper">
               <Clock size={16} className="dp-form-icon" />
               <select
@@ -111,11 +111,12 @@ export const DeanFreeRoomsPage = ({ onInspectEntity }) => {
           </div>
 
           <div className="dp-form-field dp-form-actions">
-            <label>&nbsp;</label>
+            <label className="dp-form-label dp-label-spacer">&nbsp;</label>
             <button
               type="submit"
-              className="dp-btn-primary dp-btn-search"
+              className="dp-btn-search dp-btn-primary"
               disabled={loading}
+              id="btn-search-free-rooms"
             >
               <Search size={16} />
               <span>{loading ? 'Checking...' : 'Find Available Rooms'}</span>
@@ -167,8 +168,9 @@ export const DeanFreeRoomsPage = ({ onInspectEntity }) => {
                   onClick={() => {
                     if (inspectEntity) {
                       inspectEntity({
+                        category: 'CLASSROOM',
                         entityType: 'CLASSROOM',
-                        id: r.roomNumber,
+                        id: r.roomId || r.roomNumber,
                         title: `Room ${r.roomNumber}`,
                         details: r
                       });
@@ -209,8 +211,9 @@ export const DeanFreeRoomsPage = ({ onInspectEntity }) => {
                   onClick={() => {
                     if (inspectEntity) {
                       inspectEntity({
+                        category: 'CLASSROOM',
                         entityType: 'CLASSROOM',
-                        id: r.roomNumber,
+                        id: r.roomId || r.roomNumber,
                         title: `Room ${r.roomNumber}`,
                         details: r
                       });

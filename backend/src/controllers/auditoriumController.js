@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Auditorium = require('../models/Auditorium');
 const TimetableEntry = require('../models/TimetableEntry');
 const { successResponse, errorResponse } = require('../utils/response');
@@ -142,10 +143,78 @@ const deleteAuditorium = async (req, res, next) => {
   }
 };
 
+/**
+ * Bulk delete auditoriums with referential integrity guard
+ * DELETE /api/v1/admin/auditoriums/bulk
+ */
+const bulkDeleteAuditoriums = async (req, res, next) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return errorResponse(res, 'Please provide an array of auditorium IDs to delete.', 400);
+    }
+
+    const invalidIds = ids.filter((id) => !id || !mongoose.Types.ObjectId.isValid(id));
+    if (invalidIds.length > 0) {
+      return errorResponse(res, 'One or more auditorium IDs are invalid.', 400);
+    }
+
+    const uniqueIds = Array.from(new Set(ids.map((id) => id.toString())));
+    const auditoriums = await Auditorium.find({ _id: { $in: uniqueIds } });
+    if (auditoriums.length === 0) {
+      return errorResponse(res, 'None of the specified auditoriums were found.', 404);
+    }
+
+    // Check usage in TimetableEntry
+    const referencedRoomIds = await TimetableEntry.find({ roomId: { $in: uniqueIds } }).distinct('roomId');
+    const referencedSet = new Set(referencedRoomIds.map((id) => id.toString()));
+
+    const blockedItems = auditoriums.filter((a) => referencedSet.has(a._id.toString()));
+    const safeToDelete = auditoriums.filter((a) => !referencedSet.has(a._id.toString()));
+
+    if (safeToDelete.length === 0) {
+      return errorResponse(
+        res,
+        `Cannot delete any of the selected auditorium(s). All ${blockedItems.length} selected venue(s) are currently assigned to active timetable sessions.`,
+        400,
+        null,
+        {
+          code: 'REFERENTIAL_INTEGRITY_VIOLATION',
+          details: { blockedAuditoriums: blockedItems.map((a) => `${a.auditoriumName} [${a.auditoriumNumber}]`) },
+          recommendation: 'Reassign or remove linked timetable sessions before deleting these auditoriums.'
+        }
+      );
+    }
+
+    const safeIds = safeToDelete.map((a) => a._id);
+    const deleteResult = await Auditorium.deleteMany({ _id: { $in: safeIds } });
+
+    const isPartial = blockedItems.length > 0;
+    const message = isPartial
+      ? `${deleteResult.deletedCount} auditorium(s) deleted successfully. ${blockedItems.length} venue(s) could not be deleted because they are assigned to timetable sessions.`
+      : `${deleteResult.deletedCount} auditorium(s) deleted successfully.`;
+
+    return successResponse(
+      res,
+      {
+        deletedCount: deleteResult.deletedCount,
+        deletedIds: safeIds.map((id) => id.toString()),
+        blockedCount: blockedItems.length,
+        blockedItems: blockedItems.map((a) => ({ id: a._id, auditoriumName: a.auditoriumName, auditoriumNumber: a.auditoriumNumber })),
+        isPartial
+      },
+      message
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getAuditoriums,
   getAuditoriumById,
   createAuditorium,
   updateAuditorium,
-  deleteAuditorium
+  deleteAuditorium,
+  bulkDeleteAuditoriums
 };

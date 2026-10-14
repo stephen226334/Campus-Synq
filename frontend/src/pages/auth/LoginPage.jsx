@@ -18,7 +18,7 @@ export const LoginPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const from = location.state?.from?.pathname || '/admin/dashboard';
+  const isAdminLoginRoute = location.pathname === '/admin/login' || location.pathname.startsWith('/admin');
 
   const validate = () => {
     const errs = {};
@@ -46,12 +46,17 @@ export const LoginPage = () => {
     try {
       const loggedUser = await login(email.trim(), password);
       showToast('Welcome back! Signed in successfully.', 'success');
+      const rawFrom = location.state?.from?.pathname;
+      const isAuthRoute = !rawFrom || rawFrom === '/login' || rawFrom === '/admin/login' || rawFrom === '/faculty/login' || rawFrom === '/dean/login';
+
       if (loggedUser?.role === 'DEAN') {
-        navigate('/dean/dashboard', { replace: true });
+        navigate(isAuthRoute ? '/dean/dashboard' : rawFrom, { replace: true });
       } else if (loggedUser?.role === 'FACULTY' || loggedUser?.role === 'HOD_FACULTY') {
-        navigate('/faculty/dashboard', { replace: true });
+        navigate(isAuthRoute ? '/faculty/dashboard' : rawFrom, { replace: true });
+      } else if (loggedUser?.role === 'ADMIN') {
+        navigate(isAuthRoute ? '/admin/dashboard' : rawFrom, { replace: true });
       } else {
-        navigate(from && from !== '/login' && !from.startsWith('/faculty') && !from.startsWith('/dean') ? from : '/admin/dashboard', { replace: true });
+        navigate('/admin/dashboard', { replace: true });
       }
     } catch (err) {
       const msg = err.message || 'Login failed. Please verify your credentials.';
@@ -130,10 +135,16 @@ export const LoginPage = () => {
             </div>
           </div>
           <div className="auth-form-header">
-            <span className="auth-step-pill">Secure Authentication</span>
-            <h2 className="auth-title">Welcome to Campus Synq</h2>
+            <span className="auth-step-pill">
+              {isAdminLoginRoute ? 'Administrator Authentication' : 'Secure Authentication'}
+            </span>
+            <h2 className="auth-title">
+              {isAdminLoginRoute ? 'Department Administration' : 'Welcome to Campus Synq'}
+            </h2>
             <p className="auth-subtitle">
-              Sign in with your official academic credentials to access your designated portal.
+              {isAdminLoginRoute
+                ? 'Sign in with your administrator credentials to access the academic administration portal.'
+                : 'Sign in with your official academic credentials to access your designated portal.'}
             </p>
           </div>
 
@@ -154,7 +165,7 @@ export const LoginPage = () => {
                   id="login-email"
                   type="email"
                   className={`form-input has-icon ${errors.email ? 'error' : ''}`}
-                  placeholder="faculty@campussynq.com"
+                  placeholder={isAdminLoginRoute ? 'admin@campussynq.com' : 'faculty@campussynq.com'}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="email"

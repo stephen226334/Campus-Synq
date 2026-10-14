@@ -13,6 +13,7 @@ const {
   formatAcademicDate,
   getPeriodStatus
 } = require('../utils/timeHelper');
+const { sortTimetableEntries } = require('../utils/timetableSort');
 
 /**
  * Get unified faculty dashboard data
@@ -28,7 +29,7 @@ const getFacultyDashboard = async (req, res, next) => {
     const currentTime12h = format12HourTime(now);
 
     // 1. Fetch all active timetable entries where this faculty is instructor or substitute
-    const allWeeklyEntries = await TimetableEntry.find({
+    const rawWeeklyEntries = await TimetableEntry.find({
       $or: [{ faculty: facultyId }, { substituteFaculty: facultyId }],
       status: 'ACTIVE'
     })
@@ -39,13 +40,12 @@ const getFacultyDashboard = async (req, res, next) => {
       .populate('faculty', 'fullName facultyId officialEmail designation department')
       .populate('substituteFaculty', 'fullName facultyId officialEmail designation department')
       .populate('originalFaculty', 'fullName facultyId officialEmail designation department')
-      .sort({ day: 1, 'period.order': 1 })
       .lean();
 
-    // 2. Filter today's timetable entries
-    const todayEntries = allWeeklyEntries
-      .filter((entry) => entry.day === currentDay)
-      .sort((a, b) => (a.period?.order || 0) - (b.period?.order || 0));
+    const allWeeklyEntries = sortTimetableEntries(rawWeeklyEntries);
+
+    // 2. Filter today's timetable entries (already chronologically sorted)
+    const todayEntries = allWeeklyEntries.filter((entry) => entry.day === currentDay);
 
     // 3. Process each today's entry with dynamic period status
     let currentClass = null;
@@ -170,7 +170,7 @@ const getTodaySchedule = async (req, res, next) => {
     const now = new Date();
     const currentDay = DAYS_OF_WEEK[now.getDay()];
 
-    const entries = await TimetableEntry.find({
+    const rawEntries = await TimetableEntry.find({
       $or: [{ faculty: facultyId }, { substituteFaculty: facultyId }],
       day: currentDay,
       status: 'ACTIVE'
@@ -182,8 +182,9 @@ const getTodaySchedule = async (req, res, next) => {
       .populate('faculty', 'fullName facultyId officialEmail designation')
       .populate('substituteFaculty', 'fullName facultyId officialEmail designation')
       .populate('originalFaculty', 'fullName facultyId officialEmail designation')
-      .sort({ 'period.order': 1 })
       .lean();
+
+    const entries = sortTimetableEntries(rawEntries);
 
     const processed = entries.map((entry) => {
       const periodStatus = getPeriodStatus(entry.period, now);
@@ -230,12 +231,13 @@ const getWeeklySchedule = async (req, res, next) => {
       .populate('faculty', 'fullName facultyId officialEmail designation')
       .populate('substituteFaculty', 'fullName facultyId officialEmail designation')
       .populate('originalFaculty', 'fullName facultyId officialEmail designation')
-      .sort({ day: 1, 'period.order': 1 })
       .lean();
+
+    const sortedEntries = sortTimetableEntries(entries);
 
     return successResponse(
       res,
-      entries,
+      sortedEntries,
       `Weekly timetable for ${req.user.fullName} retrieved`
     );
   } catch (error) {

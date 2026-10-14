@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import deanApi from '../../api/dean';
 import useRealtimeEvents from '../../hooks/useRealtimeEvents';
+import { useAuth } from '../../context/AuthContext';
 import {
   formatAcademicSection,
   formatAcademicSectionSplit,
@@ -37,6 +38,7 @@ import {
 export const DeanDashboardPage = () => {
   const navigate = useNavigate();
   const { openEntityDrawer, refreshKey } = useOutletContext() || {};
+  const { user } = useAuth();
 
   const [dashboardData, setDashboardData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -138,12 +140,21 @@ export const DeanDashboardPage = () => {
   const currentlyActiveClasses = dashboardData?.currentlyActiveClasses || [];
   const todaySchedule = dashboardData?.todaySchedule || [];
 
+  const getGreeting = () => {
+    const hours = currentTime.getHours();
+    if (hours < 12) return 'Good morning';
+    if (hours < 17) return 'Good afternoon';
+    return 'Good evening';
+  };
+  const deanDisplayName = user?.fullName || 'Dr. R Kumar';
+  const greetingText = `${getGreeting()}, ${deanDisplayName}`;
+
   return (
     <div className="dp-dashboard-container">
       {/* 1. TOP HEADER & GREETING */}
       <div className="dp-greeting-card">
         <div>
-          <div className="dp-dashboard-main-title">Dean Dashboard</div>
+          <h1 className="dp-dashboard-main-title">{greetingText}</h1>
           <div className="dp-dashboard-subtitle">
             <span>Computer Science Department — Academic Overview</span>
           </div>

@@ -101,9 +101,9 @@ export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
 
       {/* Query Bar */}
       <div className="dp-search-form-card">
-        <form onSubmit={handleSubmit} className="dp-status-search-form">
-          <div className="dp-status-search-field">
-            <label htmlFor="current-status-query">Search room or faculty</label>
+        <form onSubmit={handleSubmit} className="dp-status-search-grid">
+          <div className="dp-form-field dp-status-input-field">
+            <label className="dp-form-label" htmlFor="current-status-query">Search Room or Faculty</label>
             <div className="dp-form-input-wrapper">
               <Search size={18} className="dp-form-icon" />
               <input
@@ -114,13 +114,6 @@ export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
                 placeholder="Search room or faculty (e.g. B314, Prof. Ravi)..."
                 required
               />
-              <button
-                type="submit"
-                className="dp-btn-primary"
-                disabled={loading}
-              >
-                {loading ? 'Checking...' : 'Check Status'}
-              </button>
             </div>
             <div className="dp-quick-tags">
               {commonQueries.map((q) => (
@@ -138,6 +131,19 @@ export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="dp-form-field dp-form-actions">
+            <label className="dp-form-label dp-label-spacer">&nbsp;</label>
+            <button
+              type="submit"
+              className="dp-btn-search dp-btn-primary"
+              disabled={loading}
+              id="btn-search-current-status"
+            >
+              <Search size={16} />
+              <span>{loading ? 'Checking...' : 'Check Status'}</span>
+            </button>
           </div>
         </form>
       </div>
@@ -212,8 +218,9 @@ export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
                       onClick={() => {
                         if (inspectEntity) {
                           inspectEntity({
+                            category: 'CLASSROOM',
                             entityType: 'CLASSROOM',
-                            id: data.roomNumber,
+                            id: data.roomId || data.roomNumber,
                             title: `Room ${data.roomNumber}`,
                             details: data
                           });
@@ -237,6 +244,26 @@ export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
                         <span className="dp-next-status-val">{data.nextStatusChange}</span>
                       </div>
                     </div>
+                  </div>
+                  <div className="dp-status-card-footer" style={{ marginTop: '16px' }}>
+                    <button
+                      type="button"
+                      className="dp-btn-secondary"
+                      onClick={() => {
+                        if (inspectEntity) {
+                          inspectEntity({
+                            category: 'CLASSROOM',
+                            entityType: 'CLASSROOM',
+                            id: data.roomId || data.roomNumber,
+                            title: `Room ${data.roomNumber}`,
+                            details: data
+                          });
+                        }
+                      }}
+                    >
+                      <ExternalLink size={14} />
+                      <span>View Room Timetable</span>
+                    </button>
                   </div>
                 </div>
               )}
@@ -305,8 +332,9 @@ export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
                       onClick={() => {
                         if (inspectEntity) {
                           inspectEntity({
+                            category: 'FACULTY',
                             entityType: 'FACULTY',
-                            id: data.title,
+                            id: data.facultyId || data.id || data.title,
                             title: data.title,
                             details: data
                           });
@@ -330,6 +358,26 @@ export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
                         <span className="dp-next-status-val">{data.nextStatusChange}</span>
                       </div>
                     </div>
+                  </div>
+                  <div className="dp-status-card-footer" style={{ marginTop: '16px' }}>
+                    <button
+                      type="button"
+                      className="dp-btn-secondary"
+                      onClick={() => {
+                        if (inspectEntity) {
+                          inspectEntity({
+                            category: 'FACULTY',
+                            entityType: 'FACULTY',
+                            id: data.facultyId || data.id || data.title,
+                            title: data.title,
+                            details: data
+                          });
+                        }
+                      }}
+                    >
+                      <ExternalLink size={14} />
+                      <span>View Faculty Schedule</span>
+                    </button>
                   </div>
                 </div>
               )}

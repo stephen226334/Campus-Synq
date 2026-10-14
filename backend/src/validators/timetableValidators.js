@@ -50,7 +50,15 @@ const timetableCreateValidator = [
   body('status')
     .optional()
     .isIn(['ACTIVE', 'CANCELLED', 'RESCHEDULED'])
-    .withMessage('Status must be ACTIVE, CANCELLED, or RESCHEDULED')
+    .withMessage('Status must be ACTIVE, CANCELLED, or RESCHEDULED'),
+  body('overrideConflict')
+    .optional()
+    .isBoolean()
+    .withMessage('overrideConflict must be a boolean'),
+  body('allowCombinedClass')
+    .optional()
+    .isBoolean()
+    .withMessage('allowCombinedClass must be a boolean')
 ];
 
 const timetableUpdateValidator = [
@@ -89,7 +97,15 @@ const timetableUpdateValidator = [
   body('status')
     .optional()
     .isIn(['ACTIVE', 'CANCELLED', 'RESCHEDULED'])
-    .withMessage('Status must be ACTIVE, CANCELLED, or RESCHEDULED')
+    .withMessage('Status must be ACTIVE, CANCELLED, or RESCHEDULED'),
+  body('overrideConflict')
+    .optional()
+    .isBoolean()
+    .withMessage('overrideConflict must be a boolean'),
+  body('allowCombinedClass')
+    .optional()
+    .isBoolean()
+    .withMessage('allowCombinedClass must be a boolean')
 ];
 
 module.exports = {

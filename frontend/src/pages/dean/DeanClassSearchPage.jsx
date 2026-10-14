@@ -96,7 +96,7 @@ export const DeanClassSearchPage = ({ onInspectEntity }) => {
       <div className="dp-search-form-card">
         <form onSubmit={handleSubmit} className="dp-class-search-grid">
           <div className="dp-form-field">
-            <label htmlFor="search-room">Room</label>
+            <label className="dp-form-label" htmlFor="search-room">Room</label>
             <div className="dp-form-input-wrapper">
               <DoorOpen size={16} className="dp-form-icon" />
               <input
@@ -123,7 +123,7 @@ export const DeanClassSearchPage = ({ onInspectEntity }) => {
           </div>
 
           <div className="dp-form-field">
-            <label htmlFor="search-day">Day</label>
+            <label className="dp-form-label" htmlFor="search-day">Day</label>
             <div className="dp-form-input-wrapper">
               <Calendar size={16} className="dp-form-icon" />
               <select
@@ -139,7 +139,7 @@ export const DeanClassSearchPage = ({ onInspectEntity }) => {
           </div>
 
           <div className="dp-form-field">
-            <label htmlFor="search-time">Time</label>
+            <label className="dp-form-label" htmlFor="search-time">Time</label>
             <div className="dp-form-input-wrapper">
               <Clock size={16} className="dp-form-icon" />
               <select
@@ -155,11 +155,12 @@ export const DeanClassSearchPage = ({ onInspectEntity }) => {
           </div>
 
           <div className="dp-form-field dp-form-actions">
-            <label>&nbsp;</label>
+            <label className="dp-form-label dp-label-spacer">&nbsp;</label>
             <button
               type="submit"
-              className="dp-btn-primary dp-btn-search"
+              className="dp-btn-search dp-btn-primary"
               disabled={loading}
+              id="btn-search-class"
             >
               <Search size={16} />
               <span>{loading ? 'Searching...' : 'Search Class'}</span>
@@ -236,8 +237,9 @@ export const DeanClassSearchPage = ({ onInspectEntity }) => {
                     onClick={() => {
                       if (inspectEntity) {
                         inspectEntity({
+                          category: 'CLASSROOM',
                           entityType: 'CLASSROOM',
-                          id: result.roomNumber,
+                          id: result.roomId || result.roomNumber,
                           title: `Room ${result.roomNumber}`,
                           details: result
                         });
@@ -257,6 +259,26 @@ export const DeanClassSearchPage = ({ onInspectEntity }) => {
                     <h4>No Class Scheduled</h4>
                     <p>Room {result.roomNumber} is currently available. No class is scheduled during this period.</p>
                   </div>
+                </div>
+                <div className="dp-result-card-footer" style={{ marginTop: '16px' }}>
+                  <button
+                    type="button"
+                    className="dp-btn-secondary"
+                    onClick={() => {
+                      if (inspectEntity) {
+                        inspectEntity({
+                          category: 'CLASSROOM',
+                          entityType: 'CLASSROOM',
+                          id: result.roomId || result.roomNumber,
+                          title: `Room ${result.roomNumber}`,
+                          details: result
+                        });
+                      }
+                    }}
+                  >
+                    <ExternalLink size={15} />
+                    <span>View Room Details</span>
+                  </button>
                 </div>
               </div>
             )}

@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Faculty = require('../models/Faculty');
 const Subject = require('../models/Subject');
 const Classroom = require('../models/Classroom');
@@ -12,6 +13,7 @@ const Admin = require('../models/Admin');
 const { successResponse, errorResponse } = require('../utils/response');
 const { academicEvents, ACADEMIC_EVENTS } = require('../utils/eventEmitter');
 const { DAYS_OF_WEEK, format12HourTime, formatAcademicDate, getPeriodStatus, findPeriodForTime, getCurrentAcademicStatus } = require('../utils/timeHelper');
+const { sortTimetableEntries, sortPeriodsChronologically } = require('../utils/timetableSort');
 
 /**
  * DEAN DASHBOARD
@@ -67,12 +69,12 @@ const getDeanDashboard = async (req, res, next) => {
       .populate('semester', 'name academicYear')
       .lean();
 
-    // Sort by period order
-    todayEntries.sort((a, b) => (a.period?.order || 0) - (b.period?.order || 0));
+    // Sort chronologically by configured period start time
+    const sortedTodayEntries = sortTimetableEntries(todayEntries);
 
     // 3. Process each entry for Live status & 12-hour period representation
     const currentlyActiveClasses = [];
-    const todaySchedule = todayEntries.map((entry) => {
+    const todaySchedule = sortedTodayEntries.map((entry) => {
       const periodStatus = getPeriodStatus(entry.period, now);
       const isLive = periodStatus.status === 'CURRENT';
 
@@ -412,7 +414,8 @@ const getRoomWiseSearch = async (req, res, next) => {
       roomDoc = await Classroom.findOne({ roomNumber: 'B314' }).lean() || await Classroom.findOne().lean();
     }
 
-    const periods = await Period.find({ status: 'ACTIVE' }).sort({ order: 1 }).lean();
+    const rawPeriods = await Period.find({ status: 'ACTIVE' }).lean();
+    const periods = sortPeriodsChronologically(rawPeriods);
 
     const entries = await TimetableEntry.find({
       day,
@@ -582,14 +585,9 @@ const getFacultyWiseSearch = async (req, res, next) => {
       .populate('section', 'name')
       .lean();
 
-    scheduleEntries.sort((a, b) => {
-      const dayOrder = { Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6, Sunday: 7 };
-      const dDiff = (dayOrder[a.day] || 99) - (dayOrder[b.day] || 99);
-      if (dDiff !== 0) return dDiff;
-      return (a.period?.order || 0) - (b.period?.order || 0);
-    });
+    const sortedScheduleEntries = sortTimetableEntries(scheduleEntries);
 
-    const formattedSchedule = scheduleEntries.map(e => {
+    const formattedSchedule = sortedScheduleEntries.map(e => {
       const isLiveNow = e.day === todayDay && getPeriodStatus(e.period, now).status === 'CURRENT';
       return {
         _id: e._id,
@@ -1259,10 +1257,28 @@ const getFacultyList = async (req, res, next) => {
 
 const getFacultyDetails = async (req, res, next) => {
   try {
-    const faculty = await Faculty.findById(req.params.id)
-      .populate('assignedSubjects', 'name code credits type')
-      .populate('assignedSections', 'name')
-      .lean();
+    let faculty = null;
+    const rawId = req.params.id ? req.params.id.trim() : '';
+
+    if (mongoose.Types.ObjectId.isValid(rawId)) {
+      faculty = await Faculty.findById(rawId)
+        .populate('assignedSubjects', 'name code credits type')
+        .populate('assignedSections', 'name')
+        .lean();
+    }
+
+    if (!faculty && rawId) {
+      faculty = await Faculty.findOne({
+        $or: [
+          { facultyId: { $regex: new RegExp(`^${rawId}$`, 'i') } },
+          { fullName: { $regex: new RegExp(`^${rawId}$`, 'i') } },
+          { officialEmail: { $regex: new RegExp(`^${rawId}$`, 'i') } }
+        ]
+      })
+        .populate('assignedSubjects', 'name code credits type')
+        .populate('assignedSections', 'name')
+        .lean();
+    }
 
     if (!faculty) {
       return errorResponse(res, 'Faculty member not found', 404);
@@ -1279,7 +1295,7 @@ const getFacultyDetails = async (req, res, next) => {
       .populate('semester', 'name academicYear')
       .lean();
 
-    timetableEntries.sort((a, b) => (a.period?.order || 0) - (b.period?.order || 0));
+    const sortedTimetableEntries = sortTimetableEntries(timetableEntries);
 
     // Group by Day
     const weeklySchedule = {
@@ -1293,7 +1309,7 @@ const getFacultyDetails = async (req, res, next) => {
 
     const assignedRooms = new Set();
 
-    timetableEntries.forEach((entry) => {
+    sortedTimetableEntries.forEach((entry) => {
       if (weeklySchedule[entry.day]) {
         weeklySchedule[entry.day].push({
           _id: entry._id,
@@ -1406,9 +1422,25 @@ const getSubjectList = async (req, res, next) => {
 
 const getSubjectDetails = async (req, res, next) => {
   try {
-    const subject = await Subject.findById(req.params.id)
-      .populate('semester', 'name academicYear')
-      .lean();
+    let subject = null;
+    const rawId = req.params.id ? req.params.id.trim() : '';
+
+    if (mongoose.Types.ObjectId.isValid(rawId)) {
+      subject = await Subject.findById(rawId)
+        .populate('semester', 'name academicYear')
+        .lean();
+    }
+
+    if (!subject && rawId) {
+      subject = await Subject.findOne({
+        $or: [
+          { code: { $regex: new RegExp(`^${rawId}$`, 'i') } },
+          { name: { $regex: new RegExp(`^${rawId}$`, 'i') } }
+        ]
+      })
+        .populate('semester', 'name academicYear')
+        .lean();
+    }
 
     if (!subject) {
       return errorResponse(res, 'Subject not found', 404);
@@ -1421,13 +1453,13 @@ const getSubjectDetails = async (req, res, next) => {
       .populate('semester', 'name')
       .lean();
 
-    timetable.sort((a, b) => (a.period?.order || 0) - (b.period?.order || 0));
+    const sortedTimetable = sortTimetableEntries(timetable);
 
     const facultyMap = new Map();
     const sectionsSet = new Set();
     const roomsSet = new Set();
 
-    timetable.forEach((t) => {
+    sortedTimetable.forEach((t) => {
       if (t.faculty) facultyMap.set(t.faculty._id.toString(), t.faculty);
       if (t.section?.name) sectionsSet.add(t.section.name);
       if (t.roomDetails?.roomNumber) roomsSet.add(t.roomDetails.roomNumber);
@@ -1487,7 +1519,33 @@ const getClassroomList = async (req, res, next) => {
 
 const getClassroomDetails = async (req, res, next) => {
   try {
-    const classroom = await Classroom.findById(req.params.id).lean();
+    let classroom = null;
+    const rawId = req.params.id ? req.params.id.trim() : '';
+
+    if (mongoose.Types.ObjectId.isValid(rawId)) {
+      classroom = await Classroom.findById(rawId).lean();
+    }
+
+    if (!classroom && rawId) {
+      classroom = await Classroom.findOne({
+        roomNumber: { $regex: new RegExp(`^${rawId}$`, 'i') }
+      }).lean();
+    }
+
+    if (!classroom && rawId) {
+      // Also check if requested room is a lab
+      const lab = await Lab.findOne({
+        $or: [
+          { labNumber: { $regex: new RegExp(`^${rawId}$`, 'i') } },
+          { labName: { $regex: new RegExp(`^${rawId}$`, 'i') } }
+        ]
+      }).lean();
+      if (lab) {
+        req.params.id = lab._id.toString();
+        return getLabDetails(req, res, next);
+      }
+    }
+
     if (!classroom) {
       return errorResponse(res, 'Classroom not found', 404);
     }
@@ -1504,12 +1562,12 @@ const getClassroomDetails = async (req, res, next) => {
       .populate('semester', 'name')
       .lean();
 
-    sessions.sort((a, b) => (a.period?.order || 0) - (b.period?.order || 0));
+    const sortedSessions = sortTimetableEntries(sessions);
 
     // Today's classes in this room
     const now = new Date();
     const todayDay = DAYS_OF_WEEK[now.getDay()];
-    const todaySchedule = sessions
+    const todaySchedule = sortedSessions
       .filter((s) => s.day === todayDay)
       .map((s) => {
         const periodStatus = getPeriodStatus(s.period, now);
@@ -1525,9 +1583,9 @@ const getClassroomDetails = async (req, res, next) => {
       {
         classroom,
         roomType: 'Classroom',
-        assignedSessionsCount: sessions.length,
+        assignedSessionsCount: sortedSessions.length,
         todaySchedule,
-        weeklySchedule: sessions
+        weeklySchedule: sortedSessions
       },
       'Classroom details retrieved'
     );
@@ -1578,7 +1636,22 @@ const getLabList = async (req, res, next) => {
 
 const getLabDetails = async (req, res, next) => {
   try {
-    const lab = await Lab.findById(req.params.id).lean();
+    let lab = null;
+    const rawId = req.params.id ? req.params.id.trim() : '';
+
+    if (mongoose.Types.ObjectId.isValid(rawId)) {
+      lab = await Lab.findById(rawId).lean();
+    }
+
+    if (!lab && rawId) {
+      lab = await Lab.findOne({
+        $or: [
+          { labNumber: { $regex: new RegExp(`^${rawId}$`, 'i') } },
+          { labName: { $regex: new RegExp(`^${rawId}$`, 'i') } }
+        ]
+      }).lean();
+    }
+
     if (!lab) {
       return errorResponse(res, 'Lab not found', 404);
     }
@@ -1595,11 +1668,11 @@ const getLabDetails = async (req, res, next) => {
       .populate('semester', 'name')
       .lean();
 
-    sessions.sort((a, b) => (a.period?.order || 0) - (b.period?.order || 0));
+    const sortedSessions = sortTimetableEntries(sessions);
 
     const now = new Date();
     const todayDay = DAYS_OF_WEEK[now.getDay()];
-    const todaySchedule = sessions
+    const todaySchedule = sortedSessions
       .filter((s) => s.day === todayDay)
       .map((s) => {
         const periodStatus = getPeriodStatus(s.period, now);
@@ -1614,7 +1687,7 @@ const getLabDetails = async (req, res, next) => {
     const facultySet = new Set();
     const sectionsSet = new Set();
 
-    sessions.forEach((s) => {
+    sortedSessions.forEach((s) => {
       if (s.subject?.name) subjectsSet.add(s.subject.name);
       if (s.faculty?.fullName) facultySet.add(s.faculty.fullName);
       if (s.section?.name) sectionsSet.add(s.section.name);
@@ -1673,7 +1746,22 @@ const getAuditoriumList = async (req, res, next) => {
 
 const getAuditoriumDetails = async (req, res, next) => {
   try {
-    const auditorium = await Auditorium.findById(req.params.id).lean();
+    let auditorium = null;
+    const rawId = req.params.id ? req.params.id.trim() : '';
+
+    if (mongoose.Types.ObjectId.isValid(rawId)) {
+      auditorium = await Auditorium.findById(rawId).lean();
+    }
+
+    if (!auditorium && rawId) {
+      auditorium = await Auditorium.findOne({
+        $or: [
+          { auditoriumNumber: { $regex: new RegExp(`^${rawId}$`, 'i') } },
+          { name: { $regex: new RegExp(`^${rawId}$`, 'i') } }
+        ]
+      }).lean();
+    }
+
     if (!auditorium) {
       return errorResponse(res, 'Auditorium not found', 404);
     }
@@ -1689,13 +1777,15 @@ const getAuditoriumDetails = async (req, res, next) => {
       .populate('section', 'name')
       .lean();
 
+    const sortedSessions = sortTimetableEntries(sessions);
+
     return successResponse(
       res,
       {
         auditorium,
         roomType: 'Auditorium',
-        assignedSessionsCount: sessions.length,
-        schedule: sessions
+        assignedSessionsCount: sortedSessions.length,
+        schedule: sortedSessions
       },
       'Auditorium details retrieved'
     );
@@ -1738,7 +1828,19 @@ const getSemesterList = async (req, res, next) => {
 
 const getSemesterDetails = async (req, res, next) => {
   try {
-    const semester = await Semester.findById(req.params.id).lean();
+    let semester = null;
+    const rawId = req.params.id ? req.params.id.trim() : '';
+
+    if (mongoose.Types.ObjectId.isValid(rawId)) {
+      semester = await Semester.findById(rawId).lean();
+    }
+
+    if (!semester && rawId) {
+      semester = await Semester.findOne({
+        name: { $regex: new RegExp(`^${rawId}$`, 'i') }
+      }).lean();
+    }
+
     if (!semester) {
       return errorResponse(res, 'Semester not found', 404);
     }
@@ -1819,9 +1921,22 @@ const getSectionList = async (req, res, next) => {
 
 const getSectionDetails = async (req, res, next) => {
   try {
-    const section = await ClassSection.findById(req.params.id)
-      .populate('semester', 'name academicYear')
-      .lean();
+    let section = null;
+    const rawId = req.params.id ? req.params.id.trim() : '';
+
+    if (mongoose.Types.ObjectId.isValid(rawId)) {
+      section = await ClassSection.findById(rawId)
+        .populate('semester', 'name academicYear')
+        .lean();
+    }
+
+    if (!section && rawId) {
+      section = await ClassSection.findOne({
+        name: { $regex: new RegExp(`^${rawId}$`, 'i') }
+      })
+        .populate('semester', 'name academicYear')
+        .lean();
+    }
 
     if (!section) {
       return errorResponse(res, 'Section not found', 404);
@@ -1833,11 +1948,11 @@ const getSectionDetails = async (req, res, next) => {
       .populate('faculty', 'fullName facultyId designation')
       .lean();
 
-    timetable.sort((a, b) => (a.period?.order || 0) - (b.period?.order || 0));
+    const sortedTimetable = sortTimetableEntries(timetable);
 
     const now = new Date();
     const todayDay = DAYS_OF_WEEK[now.getDay()];
-    const todaySchedule = timetable
+    const todaySchedule = sortedTimetable
       .filter((t) => t.day === todayDay)
       .map((t) => {
         const periodStatus = getPeriodStatus(t.period, now);
@@ -1900,9 +2015,9 @@ const getMasterTimetable = async (req, res, next) => {
       .populate('semester', 'name academicYear')
       .lean();
 
-    entries.sort((a, b) => (a.period?.order || 0) - (b.period?.order || 0));
+    const sortedEntries = sortTimetableEntries(entries);
 
-    return successResponse(res, entries, 'Master timetable retrieved successfully');
+    return successResponse(res, sortedEntries, 'Master timetable retrieved successfully');
   } catch (error) {
     next(error);
   }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { DoorOpen, ExternalLink, Calendar, Users, Loader2 } from 'lucide-react';
+import { DoorOpen, ExternalLink, Calendar, Users, Loader2, MapPin, Building2, CheckCircle2 } from 'lucide-react';
 import deanApi from '../../api/dean';
 
 export const DeanClassroomsPage = () => {
@@ -26,14 +26,20 @@ export const DeanClassroomsPage = () => {
   }, []);
 
   return (
-    <div>
-      <div style={{ marginBottom: '20px' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--dp-text)', margin: '0 0 4px 0' }}>
-          Classrooms
-        </h1>
-        <p style={{ color: 'var(--dp-secondary)', fontSize: '0.85rem', margin: 0 }}>
-          Monitor classroom capacity, weekly schedules, and occupancy.
-        </p>
+    <div className="dp-page-container">
+      {/* Page Header */}
+      <div className="dp-page-header">
+        <div className="dp-page-title-block">
+          <div className="dp-page-icon-badge">
+            <DoorOpen size={22} />
+          </div>
+          <div>
+            <h1 className="dp-page-title">Classrooms</h1>
+            <p className="dp-page-subtitle">
+              Monitor classroom capacity, weekly schedules, and academic space occupancy.
+            </p>
+          </div>
+        </div>
       </div>
 
       {loading ? (
@@ -48,64 +54,71 @@ export const DeanClassroomsPage = () => {
           <div className="dp-empty-desc">No classrooms configured in the system.</div>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+        <div className="dp-classroom-grid">
           {classrooms.map((c) => (
-            <div
-              key={c._id}
-              style={{
-                background: 'var(--dp-card)',
-                border: '1px solid var(--dp-border)',
-                borderRadius: 'var(--dp-radius-md)',
-                padding: '20px',
-                boxShadow: 'var(--dp-shadow-subtle)',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between'
-              }}
-            >
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <span className="dp-period-badge">Classroom</span>
-                  <span className={`dp-status-badge ${c.status?.toLowerCase()}`}>{c.status}</span>
+            <div key={c._id} className="dp-classroom-card">
+              <div className="dp-classroom-card-top">
+                {/* Header Row: Room Type & Availability Badge */}
+                <div className="dp-classroom-header-row">
+                  <span className="dp-asset-type-badge">
+                    <DoorOpen size={13} />
+                    <span>Classroom</span>
+                  </span>
+                  <span className={`dp-status-badge ${c.status?.toLowerCase() === 'inactive' ? 'occupied' : 'active'}`}>
+                    <span className={`dp-status-dot ${c.status?.toLowerCase() === 'inactive' ? 'red' : 'green'}`}></span>
+                    <span>{c.status || 'ACTIVE'}</span>
+                  </span>
                 </div>
 
-                <h3 style={{ fontSize: '1.35rem', fontWeight: 800, margin: '0 0 4px 0', color: 'var(--dp-text)' }}>
-                  {c.roomNumber}
-                </h3>
-                <p style={{ fontSize: '0.82rem', color: 'var(--dp-secondary)', margin: '0 0 16px 0' }}>
-                  Floor: {c.floor || 'Standard Wing'}
-                </p>
+                {/* Room Information: Balanced Typography & Hierarchy */}
+                <div className="dp-classroom-info-block">
+                  <h3 className="dp-classroom-title">Room {c.roomNumber}</h3>
+                  <p className="dp-classroom-location">
+                    <MapPin size={13} />
+                    <span>{c.floor || 'Level 2 · Main Academic Block'}</span>
+                  </p>
+                </div>
 
-                <div className="dp-info-grid" style={{ marginBottom: '16px' }}>
-                  <div className="dp-info-cell">
-                    <div className="dp-info-cell-label">Capacity</div>
-                    <div className="dp-info-cell-value">{c.capacity} Seats</div>
+                {/* Metrics: Consistent Blocks with Icons */}
+                <div className="dp-classroom-metrics-grid">
+                  <div className="dp-metric-cell">
+                    <div className="dp-metric-label">
+                      <Users size={12} />
+                      <span>Capacity</span>
+                    </div>
+                    <div className="dp-metric-val">{c.capacity} Seats</div>
                   </div>
-                  <div className="dp-info-cell">
-                    <div className="dp-info-cell-label">Classes</div>
-                    <div className="dp-info-cell-value">{c.assignedSessionsCount || 0} / Week</div>
+                  <div className="dp-metric-cell">
+                    <div className="dp-metric-label">
+                      <Calendar size={12} />
+                      <span>Classes</span>
+                    </div>
+                    <div className="dp-metric-val">{c.assignedSessionsCount || 0} / Week</div>
                   </div>
                 </div>
               </div>
 
-              <button
-                type="button"
-                className="dp-btn dp-btn-outline dp-btn-sm"
-                style={{ width: '100%' }}
-                onClick={() => {
-                  if (openEntityDrawer) {
-                    openEntityDrawer({
-                      id: c._id,
-                      category: 'CLASSROOM',
-                      title: `Room ${c.roomNumber}`,
-                      raw: c
-                    });
-                  }
-                }}
-              >
-                <ExternalLink size={14} />
-                <span>View Details</span>
-              </button>
+              {/* Action Button Aligned along Bottom */}
+              <div className="dp-classroom-card-action">
+                <button
+                  type="button"
+                  className="dp-btn-card-action"
+                  onClick={() => {
+                    if (openEntityDrawer) {
+                      openEntityDrawer({
+                        id: c._id || c.roomNumber,
+                        category: 'CLASSROOM',
+                        title: `Room ${c.roomNumber}`,
+                        raw: c
+                      });
+                    }
+                  }}
+                  aria-label={`View details for Room ${c.roomNumber}`}
+                >
+                  <ExternalLink size={14} />
+                  <span>View Details</span>
+                </button>
+              </div>
             </div>
           ))}
         </div>

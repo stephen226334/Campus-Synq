@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Semester = require('../models/Semester');
 const Subject = require('../models/Subject');
 const ClassSection = require('../models/ClassSection');
@@ -162,10 +163,83 @@ const deleteSemester = async (req, res, next) => {
   }
 };
 
+/**
+ * Bulk delete semesters with referential integrity guard
+ * DELETE /api/v1/admin/semesters/bulk
+ */
+const bulkDeleteSemesters = async (req, res, next) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return errorResponse(res, 'Please provide an array of semester IDs to delete.', 400);
+    }
+
+    const invalidIds = ids.filter((id) => !id || !mongoose.Types.ObjectId.isValid(id));
+    if (invalidIds.length > 0) {
+      return errorResponse(res, 'One or more semester IDs are invalid.', 400);
+    }
+
+    const uniqueIds = Array.from(new Set(ids.map((id) => id.toString())));
+    const semesters = await Semester.find({ _id: { $in: uniqueIds } });
+    if (semesters.length === 0) {
+      return errorResponse(res, 'None of the specified semesters were found.', 404);
+    }
+
+    // Check usage in Subject, ClassSection, and TimetableEntry
+    const [subRefs, secRefs, ttRefs] = await Promise.all([
+      Subject.find({ semester: { $in: uniqueIds } }).distinct('semester'),
+      ClassSection.find({ semester: { $in: uniqueIds } }).distinct('semester'),
+      TimetableEntry.find({ semester: { $in: uniqueIds } }).distinct('semester')
+    ]);
+
+    const referencedSet = new Set([...subRefs, ...secRefs, ...ttRefs].map((id) => id.toString()));
+
+    const blockedItems = semesters.filter((s) => referencedSet.has(s._id.toString()));
+    const safeToDelete = semesters.filter((s) => !referencedSet.has(s._id.toString()));
+
+    if (safeToDelete.length === 0) {
+      return errorResponse(
+        res,
+        `Cannot delete any of the selected semester(s). All ${blockedItems.length} selected semester(s) are currently referenced by active subjects, class sections, or timetable schedules.`,
+        400,
+        null,
+        {
+          code: 'REFERENTIAL_INTEGRITY_VIOLATION',
+          details: { blockedSemesters: blockedItems.map((s) => `${s.name} (${s.academicYear})`) },
+          recommendation: 'Reassign or remove linked subjects, sections, and timetable sessions before deleting these semesters.'
+        }
+      );
+    }
+
+    const safeIds = safeToDelete.map((s) => s._id);
+    const deleteResult = await Semester.deleteMany({ _id: { $in: safeIds } });
+
+    const isPartial = blockedItems.length > 0;
+    const message = isPartial
+      ? `${deleteResult.deletedCount} semester(s) deleted successfully. ${blockedItems.length} semester(s) could not be deleted because they have active dependencies.`
+      : `${deleteResult.deletedCount} semester(s) deleted successfully.`;
+
+    return successResponse(
+      res,
+      {
+        deletedCount: deleteResult.deletedCount,
+        deletedIds: safeIds.map((id) => id.toString()),
+        blockedCount: blockedItems.length,
+        blockedItems: blockedItems.map((s) => ({ id: s._id, name: s.name, academicYear: s.academicYear })),
+        isPartial
+      },
+      message
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getSemesters,
   getSemesterById,
   createSemester,
   updateSemester,
-  deleteSemester
+  deleteSemester,
+  bulkDeleteSemesters
 };

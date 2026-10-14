@@ -13,6 +13,7 @@ router.get('/', classroomController.getClassrooms);
 router.get('/:id', idParamValidator, validateMiddleware, classroomController.getClassroomById);
 router.post('/', classroomCreateValidator, validateMiddleware, classroomController.createClassroom);
 router.put('/:id', idParamValidator, classroomUpdateValidator, validateMiddleware, classroomController.updateClassroom);
+router.delete('/bulk', classroomController.bulkDeleteClassrooms);
 router.delete('/:id', idParamValidator, validateMiddleware, classroomController.deleteClassroom);
 
 module.exports = router;

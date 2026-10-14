@@ -22,8 +22,17 @@ import {
   CheckSquare,
   X
 } from 'lucide-react';
+import {
+  sortTimetableEntries,
+  sortPeriodsChronologically,
+  formatPeriodTimeRange
+} from '../../utils/timetableSort';
 
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+const sortPeriodsAcademic = (list) => {
+  return sortPeriodsChronologically(list);
+};
 
 export const TimetablePage = () => {
   const [entries, setEntries] = useState([]);
@@ -71,6 +80,11 @@ export const TimetablePage = () => {
   const [formErrors, setFormErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Conflict confirmation modal state
+  const [conflictData, setConflictData] = useState(null);
+  const [isConflictDialogOpen, setIsConflictDialogOpen] = useState(false);
+  const [isConfirmingConflict, setIsConfirmingConflict] = useState(false);
+
   // Delete modal state
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deletingItem, setDeletingItem] = useState(null);
@@ -91,7 +105,7 @@ export const TimetablePage = () => {
         api.get('/admin/auditoriums')
       ]);
 
-      if (pers?.data) setPeriodsList(pers.data);
+      if (pers?.data) setPeriodsList(sortPeriodsAcademic(pers.data));
       if (sems?.data) setSemestersList(sems.data);
       if (secs?.data) setSectionsList(secs.data);
       if (subs?.data) setSubjectsList(subs.data);
@@ -116,7 +130,7 @@ export const TimetablePage = () => {
 
       const res = await api.get('/admin/timetable', params);
       if (res && res.data) {
-        setEntries(res.data);
+        setEntries(sortTimetableEntries(res.data));
       }
     } catch (err) {
       showError(err, { title: 'Failed to Load Timetable' });
@@ -135,12 +149,36 @@ export const TimetablePage = () => {
 
   const handleOpenAdd = () => {
     setEditingItem(null);
+
+    let targetSectionId = sectionFilter || '';
+    let targetSemesterId = semesterFilter || '';
+
+    if (targetSectionId) {
+      const sec = sectionsList.find((s) => s._id === targetSectionId);
+      if (sec && sec.semester) {
+        targetSemesterId = (sec.semester._id || sec.semester).toString();
+      }
+    } else if (!targetSemesterId && semestersList.length > 0) {
+      targetSemesterId = semestersList[0]._id;
+    }
+
+    const availableSections = sectionsList.filter(
+      (s) => (s.semester?._id || s.semester)?.toString() === targetSemesterId?.toString()
+    );
+    if (!targetSectionId && availableSections.length > 0) {
+      targetSectionId = availableSections[0]._id;
+    }
+
+    const availableSubjects = subjectsList.filter(
+      (sub) => (sub.semester?._id || sub.semester)?.toString() === targetSemesterId?.toString()
+    );
+
     setFormData({
       day: selectedDay !== 'ALL' ? selectedDay : 'Monday',
       period: periodsList[0]?._id || '',
-      semester: semestersList[0]?._id || '',
-      section: sectionsList[0]?._id || '',
-      subject: subjectsList[0]?._id || '',
+      semester: targetSemesterId || '',
+      section: targetSectionId || '',
+      subject: availableSubjects[0]?._id || '',
       faculty: facultyList[0]?._id || '',
       roomType: 'Classroom',
       roomId: classroomsList[0]?._id || '',
@@ -165,6 +203,39 @@ export const TimetablePage = () => {
     });
     setFormErrors({});
     setIsModalOpen(true);
+  };
+
+  const handleModalSemesterChange = (newSemId) => {
+    const matchingSections = sectionsList.filter(
+      (s) => (s.semester?._id || s.semester)?.toString() === newSemId?.toString()
+    );
+    const matchingSubjects = subjectsList.filter(
+      (sub) => (sub.semester?._id || sub.semester)?.toString() === newSemId?.toString()
+    );
+    setFormData((prev) => ({
+      ...prev,
+      semester: newSemId,
+      section: matchingSections[0]?._id || '',
+      subject: matchingSubjects[0]?._id || ''
+    }));
+  };
+
+  const handleModalSectionChange = (newSecId) => {
+    const sec = sectionsList.find((s) => s._id === newSecId);
+    const secSemId = (sec?.semester?._id || sec?.semester)?.toString();
+    setFormData((prev) => {
+      const updated = { ...prev, section: newSecId };
+      if (secSemId && secSemId !== prev.semester?.toString()) {
+        updated.semester = secSemId;
+        const matchingSubjects = subjectsList.filter(
+          (sub) => (sub.semester?._id || sub.semester)?.toString() === secSemId
+        );
+        if (!matchingSubjects.some((sub) => sub._id === prev.subject)) {
+          updated.subject = matchingSubjects[0]?._id || '';
+        }
+      }
+      return updated;
+    });
   };
 
   const validateForm = () => {
@@ -203,10 +274,87 @@ export const TimetablePage = () => {
       setIsModalOpen(false);
       fetchTimetable();
     } catch (err) {
-      setFormErrors({ submit: err.message });
-      showError(err, { title: editingItem ? 'Failed to Update Session' : 'Failed to Schedule Session' });
+      // Check if error is an overridable scheduling conflict (Combined Class / Faculty Conflict)
+      const errDetails = err.data?.details || err.data?.errors || err.errors;
+      const canOverride = Boolean(
+        errDetails?.canOverride ||
+        err.data?.canOverride ||
+        (err.status === 409 && (errDetails?.conflictType === 'COMBINED_CLASS' || errDetails?.conflictType === 'FACULTY'))
+      );
+
+      if (canOverride) {
+        // Resolve labels for proposed session for side-by-side comparison
+        const facultyObj = facultyList.find((f) => f._id === formData.faculty);
+        const subjectObj = subjectsList.find((s) => s._id === formData.subject);
+        const sectionObj = sectionsList.find((s) => s._id === formData.section);
+        const periodObj = periodsList.find((p) => p._id === formData.period);
+        const roomObj = getRoomOptions().find((r) => r.id === formData.roomId);
+
+        setConflictData({
+          conflictType: errDetails?.conflictType || 'COMBINED_CLASS',
+          message: err.data?.message || err.message,
+          recommendation: err.data?.recommendation || '',
+          existingEntry: errDetails?.existingEntry || null,
+          proposedEntry: {
+            facultyName: facultyObj?.fullName || 'Faculty Member',
+            facultyId: facultyObj?.facultyId || '',
+            subjectName: subjectObj?.name || 'Subject Course',
+            subjectCode: subjectObj?.code || '',
+            sectionName: sectionObj?.name || 'Section',
+            roomNumber: roomObj?.label || 'Selected Room',
+            day: formData.day,
+            periodLabel: periodObj ? `${periodObj.periodNumber} (${periodObj.startTime} - ${periodObj.endTime})` : 'Selected Period'
+          }
+        });
+        setIsConflictDialogOpen(true);
+      } else {
+        setFormErrors({ submit: err.message });
+        showError(err, { title: editingItem ? 'Failed to Update Session' : 'Failed to Schedule Session' });
+      }
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleCancelConflict = () => {
+    setIsConflictDialogOpen(false);
+    setConflictData(null);
+    // Preserves existing form values in formData!
+  };
+
+  const handleConfirmConflict = async () => {
+    if (!conflictData) return;
+    setIsConfirmingConflict(true);
+
+    try {
+      const payload = {
+        ...formData,
+        overrideConflict: true,
+        allowCombinedClass: true
+      };
+
+      if (editingItem) {
+        await api.put(`/admin/timetable/${editingItem._id}`, payload);
+        showSuccess('Combined Session Updated', {
+          message: 'The combined timetable session was updated successfully.'
+        });
+      } else {
+        await api.post('/admin/timetable', payload);
+        showSuccess('Combined Class Scheduled', {
+          message: `Successfully scheduled combined class session for ${conflictData.proposedEntry?.sectionName || 'the section'}.`
+        });
+      }
+
+      setIsConflictDialogOpen(false);
+      setConflictData(null);
+      setIsModalOpen(false);
+      fetchTimetable();
+    } catch (err) {
+      showError(err, { title: 'Failed to Confirm Combined Session' });
+      setIsConflictDialogOpen(false);
+      setFormErrors({ submit: err.message });
+    } finally {
+      setIsConfirmingConflict(false);
     }
   };
 
@@ -382,6 +530,17 @@ export const TimetablePage = () => {
     }
   };
 
+  const activeSectionObj = sectionFilter
+    ? sectionsList.find((s) => s._id === sectionFilter)
+    : null;
+
+  const modalSections = sectionsList.filter(
+    (sec) => (sec.semester?._id || sec.semester)?.toString() === formData.semester?.toString()
+  );
+  const modalSubjects = subjectsList.filter(
+    (sub) => (sub.semester?._id || sub.semester)?.toString() === formData.semester?.toString()
+  );
+
   // Helper for available rooms based on selected roomType
   const getRoomOptions = () => {
     if (formData.roomType === 'Classroom') {
@@ -427,7 +586,7 @@ export const TimetablePage = () => {
         </div>
       </div>
 
-      {/* Day Selector Tabs */}
+      {/* Day Selector Tabs & Filters */}
       <div className="card" style={{ padding: '0.65rem', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
           {DAYS_OF_WEEK.map((day) => (
@@ -452,11 +611,57 @@ export const TimetablePage = () => {
         {/* Filters */}
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
           <Filter size={15} style={{ color: 'var(--text-muted)' }} />
+
+          {/* Dedicated Class Section Filter with Semester Grouping */}
+          <select
+            id="filter-section-select"
+            className="form-select table-filter-select"
+            value={sectionFilter}
+            onChange={(e) => {
+              const val = e.target.value;
+              setSectionFilter(val);
+              if (val) {
+                const sec = sectionsList.find((s) => s._id === val);
+                const semId = sec?.semester?._id || sec?.semester;
+                if (semId) setSemesterFilter(semId.toString());
+              }
+            }}
+            style={{ width: 'auto', minWidth: '180px' }}
+            aria-label="Filter by Class Section"
+          >
+            <option value="">All Class Sections</option>
+            {semestersList.map((sem) => {
+              const semSections = sectionsList.filter(
+                (sec) => (sec.semester?._id || sec.semester)?.toString() === sem._id?.toString()
+              );
+              if (semSections.length === 0) return null;
+              return (
+                <optgroup key={sem._id} label={sem.name}>
+                  {semSections.map((sec) => (
+                    <option key={sec._id} value={sec._id}>
+                      {sem.name} — Section {sec.name}
+                    </option>
+                  ))}
+                </optgroup>
+              );
+            })}
+          </select>
+
           <select
             className="form-select table-filter-select"
             value={semesterFilter}
-            onChange={(e) => setSemesterFilter(e.target.value)}
-            style={{ width: 'auto', minWidth: '130px' }}
+            onChange={(e) => {
+              const val = e.target.value;
+              setSemesterFilter(val);
+              if (sectionFilter) {
+                const curSec = sectionsList.find((s) => s._id === sectionFilter);
+                const curSemId = (curSec?.semester?._id || curSec?.semester)?.toString();
+                if (val && curSemId !== val) {
+                  setSectionFilter('');
+                }
+              }
+            }}
+            style={{ width: 'auto', minWidth: '140px' }}
             aria-label="Filter by Semester"
           >
             <option value="">All Semesters</option>
@@ -469,7 +674,7 @@ export const TimetablePage = () => {
             className="form-select table-filter-select"
             value={facultyFilter}
             onChange={(e) => setFacultyFilter(e.target.value)}
-            style={{ width: 'auto', minWidth: '130px' }}
+            style={{ width: 'auto', minWidth: '140px' }}
             aria-label="Filter by Faculty"
           >
             <option value="">All Faculty</option>
@@ -479,6 +684,77 @@ export const TimetablePage = () => {
           </select>
         </div>
       </div>
+
+      {/* Active Section Indicator Banner */}
+      {activeSectionObj && (
+        <div
+          className="active-section-banner card"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0.85rem 1.25rem',
+            marginBottom: '1.25rem',
+            background: 'linear-gradient(90deg, rgba(37, 99, 235, 0.08) 0%, rgba(99, 102, 241, 0.08) 100%)',
+            border: '1px solid rgba(59, 130, 246, 0.25)',
+            borderRadius: '10px',
+            flexWrap: 'wrap',
+            gap: '0.75rem'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div
+              style={{
+                width: '38px',
+                height: '38px',
+                borderRadius: '8px',
+                backgroundColor: 'var(--primary-main)',
+                color: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <Layers size={20} />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '2px' }}>
+                <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', fontWeight: '700' }}>
+                  Managing Timetable For
+                </span>
+                <span className="badge badge-active font-mono" style={{ fontSize: '0.72rem', padding: '1px 7px' }}>
+                  {entries.length} Sessions on {selectedDay}
+                </span>
+              </div>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-primary)' }}>
+                {activeSectionObj.semester?.name || 'Semester'} — Section {activeSectionObj.name}
+              </h3>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={handleOpenAdd}
+              id="btn-schedule-for-active-section"
+            >
+              <Plus size={15} />
+              <span>Add Session to Section {activeSectionObj.name}</span>
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setSectionFilter('')}
+              title="View all class sections"
+              id="btn-clear-section-filter"
+            >
+              <X size={15} />
+              <span>Clear Section Filter</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Bulk Action Toolbar */}
       {selectedIds.length > 0 && (
@@ -582,18 +858,43 @@ export const TimetablePage = () => {
                       </td>
                       <td>
                         <div style={{ display: 'flex', flexDirection: 'column' }}>
-                          <span className="code-badge font-mono" style={{ alignSelf: 'flex-start' }}>
-                            {entry.period?.periodNumber || 'Period'}
-                          </span>
-                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                            {entry.period?.startTime} - {entry.period?.endTime}
-                          </span>
+                          {entry.period ? (
+                            <>
+                              <span className="code-badge font-mono" style={{ alignSelf: 'flex-start' }}>
+                                {entry.period.periodNumber || 'Period'}
+                              </span>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                {formatPeriodTimeRange(entry.period)}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <span
+                                className="code-badge font-mono"
+                                style={{
+                                  alignSelf: 'flex-start',
+                                  background: 'var(--warning-soft, #fef3c7)',
+                                  color: 'var(--warning-dark, #b45309)'
+                                }}
+                              >
+                                Unassigned Period
+                              </span>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px', fontStyle: 'italic' }}>
+                                Time Unspecified
+                              </span>
+                            </>
+                          )}
                         </div>
                       </td>
                       <td>
                         <div style={{ display: 'flex', flexDirection: 'column' }}>
                           <span className="font-semibold">{entry.subject?.name}</span>
                           <span className="text-muted text-sm">{entry.subject?.code}</span>
+                          {entry.isCombinedClass && (
+                            <span className="badge-combined-class">
+                              Combined Class
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td>
@@ -711,7 +1012,7 @@ export const TimetablePage = () => {
                 id="tt-semester"
                 className={`form-select ${formErrors.semester ? 'error' : ''}`}
                 value={formData.semester}
-                onChange={(e) => setFormData({ ...formData, semester: e.target.value })}
+                onChange={(e) => handleModalSemesterChange(e.target.value)}
                 required
               >
                 <option value="">Select Semester</option>
@@ -730,11 +1031,12 @@ export const TimetablePage = () => {
                 id="tt-section"
                 className={`form-select ${formErrors.section ? 'error' : ''}`}
                 value={formData.section}
-                onChange={(e) => setFormData({ ...formData, section: e.target.value })}
+                onChange={(e) => handleModalSectionChange(e.target.value)}
                 required
+                disabled={!formData.semester}
               >
-                <option value="">Select Section</option>
-                {sectionsList.map((sec) => (
+                <option value="">{formData.semester ? 'Select Section' : 'Select Semester first'}</option>
+                {modalSections.map((sec) => (
                   <option key={sec._id} value={sec._id}>{sec.name}</option>
                 ))}
               </select>
@@ -753,9 +1055,10 @@ export const TimetablePage = () => {
                 value={formData.subject}
                 onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
                 required
+                disabled={!formData.semester}
               >
-                <option value="">Select Subject</option>
-                {subjectsList.map((sub) => (
+                <option value="">{formData.semester ? 'Select Subject' : 'Select Semester first'}</option>
+                {modalSubjects.map((sub) => (
                   <option key={sub._id} value={sub._id}>{sub.code}: {sub.name}</option>
                 ))}
               </select>
@@ -854,6 +1157,168 @@ export const TimetablePage = () => {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Intentional Combined Class / Conflict Confirmation Dialog */}
+      <Modal
+        isOpen={isConflictDialogOpen}
+        onClose={isConfirmingConflict ? undefined : handleCancelConflict}
+        title={conflictData?.conflictType === 'COMBINED_CLASS' ? 'Combined Class Confirmation' : 'Faculty Scheduling Conflict'}
+        maxWidth="620px"
+      >
+        <div style={{ padding: '0.25rem 0' }}>
+          {/* Conflict Warning Header Banner */}
+          <div className="conflict-modal-banner">
+            <div style={{ color: 'var(--primary-main, #6d3df5)', flexShrink: 0, marginTop: '2px' }}>
+              <AlertTriangle size={24} />
+            </div>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary, #0f172a)', marginBottom: '0.25rem' }}>
+                {conflictData?.conflictType === 'COMBINED_CLASS'
+                  ? 'Intentional Combined Class Detected'
+                  : 'Faculty Schedule Conflict Detected'}
+              </div>
+              <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary, #475569)', lineHeight: 1.5 }}>
+                {conflictData?.message}
+              </div>
+            </div>
+          </div>
+
+          {/* Session Comparison Cards */}
+          <div className="conflict-cards-comparison">
+            {/* Existing Session Card */}
+            <div className="conflict-session-card">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted, #64748b)', letterSpacing: '0.05em' }}>
+                  Existing Session
+                </span>
+                <span
+                  style={{
+                    fontSize: '0.68rem',
+                    fontWeight: 600,
+                    padding: '1px 6px',
+                    borderRadius: '4px',
+                    background: '#e0e7ff',
+                    color: '#3730a3'
+                  }}
+                >
+                  On Timetable
+                </span>
+              </div>
+              {conflictData?.existingEntry ? (
+                <div style={{ fontSize: '0.825rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>Course: </strong>
+                    <span>{conflictData.existingEntry.subjectName}</span>
+                    {conflictData.existingEntry.subjectCode && (
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}> ({conflictData.existingEntry.subjectCode})</span>
+                    )}
+                  </div>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>Section: </strong>
+                    <span style={{ color: 'var(--primary-main)', fontWeight: 600 }}>{conflictData.existingEntry.sectionName}</span>
+                  </div>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>Faculty: </strong>
+                    <span>{conflictData.existingEntry.facultyName}</span>
+                  </div>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>Venue: </strong>
+                    <span>{conflictData.existingEntry.roomNumber}</span>
+                  </div>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>Slot: </strong>
+                    <span>{conflictData.existingEntry.day}, {conflictData.existingEntry.periodLabel}</span>
+                  </div>
+                </div>
+              ) : (
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Currently scheduled active session.</p>
+              )}
+            </div>
+
+            {/* Proposed Session Card */}
+            <div className="conflict-session-card proposed">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--primary-main, #6d3df5)', letterSpacing: '0.05em' }}>
+                  Proposed Session
+                </span>
+                <span
+                  style={{
+                    fontSize: '0.68rem',
+                    fontWeight: 600,
+                    padding: '1px 6px',
+                    borderRadius: '4px',
+                    background: 'var(--primary-main, #6d3df5)',
+                    color: '#ffffff'
+                  }}
+                >
+                  To Schedule
+                </span>
+              </div>
+              {conflictData?.proposedEntry ? (
+                <div style={{ fontSize: '0.825rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>Course: </strong>
+                    <span>{conflictData.proposedEntry.subjectName}</span>
+                    {conflictData.proposedEntry.subjectCode && (
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}> ({conflictData.proposedEntry.subjectCode})</span>
+                    )}
+                  </div>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>Section: </strong>
+                    <span style={{ color: 'var(--primary-main)', fontWeight: 600 }}>{conflictData.proposedEntry.sectionName}</span>
+                  </div>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>Faculty: </strong>
+                    <span>{conflictData.proposedEntry.facultyName}</span>
+                  </div>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>Venue: </strong>
+                    <span>{conflictData.proposedEntry.roomNumber}</span>
+                  </div>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>Slot: </strong>
+                    <span>{conflictData.proposedEntry.day}, {conflictData.proposedEntry.periodLabel}</span>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          {/* Explanation note */}
+          <div className="conflict-info-note">
+            <strong>Combined Class Policy:</strong> Confirming allows the faculty member to teach these multiple class sections together (e.g. combined electives in the same room). The existing session will <em>not</em> be deleted or overwritten.
+          </div>
+
+          {/* Actions */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={handleCancelConflict}
+              disabled={isConfirmingConflict}
+              id="btn-conflict-cancel"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleConfirmConflict}
+              disabled={isConfirmingConflict}
+              id="btn-conflict-confirm"
+            >
+              {isConfirmingConflict ? (
+                <>
+                  <Loader2 className="spinner" size={16} />
+                  <span>Scheduling Combined Session...</span>
+                </>
+              ) : (
+                'Confirm & Schedule Anyway'
+              )}
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {/* Delete Confirmation Modal */}

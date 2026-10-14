@@ -180,16 +180,23 @@ const seedFacultyPortalData = async () => {
       { day: 'Saturday', period: periodMap.P1._id, subject: subjectOS._id, section: sectionB._id, roomType: 'Lab', roomId: lab01._id, roomDetails: { roomNumber: 'LAB-01', name: 'Systems & Networking Lab', capacity: 45 } }
     ];
 
+    const safeSeedEntry = async (query, entryData) => {
+      const existing = await TimetableEntry.findOne(query);
+      if (!existing) {
+        return await TimetableEntry.create(entryData);
+      }
+      return existing;
+    };
+
     for (const item of subuSchedule) {
-      await TimetableEntry.findOneAndUpdate(
+      await safeSeedEntry(
         { day: item.day, period: item.period, faculty: subu._id },
         {
           ...item,
           semester: semester._id,
           faculty: subu._id,
           status: 'ACTIVE'
-        },
-        { upsert: true, new: true }
+        }
       );
     }
 
@@ -296,9 +303,9 @@ const seedFacultyPortalData = async () => {
       { upsert: true, new: true }
     );
 
-    // 4e. Seed Demo Timetables for B314 and Prof. Ravi:
+    // 4e. Seed Demo Timetables for B314 and Prof. Ravi (only if missing):
     // Monday P1: B314 -> Dr. Kumar -> Java (DS) -> MSc CS A
-    await TimetableEntry.findOneAndUpdate(
+    await safeSeedEntry(
       { day: 'Monday', period: periodMap.P1._id, roomId: roomB314._id },
       {
         day: 'Monday',
@@ -311,12 +318,11 @@ const seedFacultyPortalData = async () => {
         roomId: roomB314._id,
         roomDetails: { roomNumber: 'B314', name: 'Lecture Hall B314', capacity: 60 },
         status: 'ACTIVE'
-      },
-      { upsert: true, new: true }
+      }
     );
 
     // Monday P2: B314 -> Prof. Ravi -> DBMS -> MSc CS A
-    await TimetableEntry.findOneAndUpdate(
+    await safeSeedEntry(
       { day: 'Monday', period: periodMap.P2._id, roomId: roomB314._id },
       {
         day: 'Monday',
@@ -329,12 +335,11 @@ const seedFacultyPortalData = async () => {
         roomId: roomB314._id,
         roomDetails: { roomNumber: 'B314', name: 'Lecture Hall B314', capacity: 60 },
         status: 'ACTIVE'
-      },
-      { upsert: true, new: true }
+      }
     );
 
     // Monday P3: B314 -> John -> OS -> MCA B
-    await TimetableEntry.findOneAndUpdate(
+    await safeSeedEntry(
       { day: 'Monday', period: periodMap.P3._id, roomId: roomB314._id },
       {
         day: 'Monday',
@@ -347,12 +352,11 @@ const seedFacultyPortalData = async () => {
         roomId: roomB314._id,
         roomDetails: { roomNumber: 'B314', name: 'Lecture Hall B314', capacity: 60 },
         status: 'ACTIVE'
-      },
-      { upsert: true, new: true }
+      }
     );
 
     // Monday P2: B315 -> Subu -> AI -> BCA B
-    await TimetableEntry.findOneAndUpdate(
+    await safeSeedEntry(
       { day: 'Monday', period: periodMap.P2._id, roomId: roomB315._id },
       {
         day: 'Monday',
@@ -365,14 +369,13 @@ const seedFacultyPortalData = async () => {
         roomId: roomB315._id,
         roomDetails: { roomNumber: 'B315', name: 'Lecture Hall B315', capacity: 60 },
         status: 'ACTIVE'
-      },
-      { upsert: true, new: true }
+      }
     );
 
     // Monday P2: C201 -> Alan -> CN -> MCA A
     let alan = await Faculty.findOne({ officialEmail: 'alan@campussynq.com' });
     if (alan) {
-      await TimetableEntry.findOneAndUpdate(
+      await safeSeedEntry(
         { day: 'Monday', period: periodMap.P2._id, roomId: roomC201._id },
         {
           day: 'Monday',
@@ -385,14 +388,13 @@ const seedFacultyPortalData = async () => {
           roomId: roomC201._id,
           roomDetails: { roomNumber: 'C201', name: 'Classroom C201', capacity: 60 },
           status: 'ACTIVE'
-        },
-        { upsert: true, new: true }
+        }
       );
     }
 
     // Prof. Ravi on other days:
     // Tuesday P2 in B205 (BCA B)
-    await TimetableEntry.findOneAndUpdate(
+    await safeSeedEntry(
       { day: 'Tuesday', period: periodMap.P2._id, faculty: ravi._id },
       {
         day: 'Tuesday',
@@ -405,12 +407,11 @@ const seedFacultyPortalData = async () => {
         roomId: roomB205._id,
         roomDetails: { roomNumber: 'B205', name: 'Classroom B205', capacity: 50 },
         status: 'ACTIVE'
-      },
-      { upsert: true, new: true }
+      }
     );
 
     // Wednesday P1 in LAB-01
-    await TimetableEntry.findOneAndUpdate(
+    await safeSeedEntry(
       { day: 'Wednesday', period: periodMap.P1._id, faculty: ravi._id },
       {
         day: 'Wednesday',
@@ -423,8 +424,7 @@ const seedFacultyPortalData = async () => {
         roomId: lab01._id,
         roomDetails: { roomNumber: 'LAB-01', name: 'Systems & Networking Lab', capacity: 45 },
         status: 'ACTIVE'
-      },
-      { upsert: true, new: true }
+      }
     );
 
     // 5a. Official Admin Account

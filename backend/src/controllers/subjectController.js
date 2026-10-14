@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Subject = require('../models/Subject');
 const Semester = require('../models/Semester');
 const TimetableEntry = require('../models/TimetableEntry');
@@ -168,10 +169,78 @@ const deleteSubject = async (req, res, next) => {
   }
 };
 
+/**
+ * Bulk delete subjects with referential integrity guard
+ * DELETE /api/v1/admin/subjects/bulk
+ */
+const bulkDeleteSubjects = async (req, res, next) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return errorResponse(res, 'Please provide an array of subject IDs to delete.', 400);
+    }
+
+    const invalidIds = ids.filter((id) => !id || !mongoose.Types.ObjectId.isValid(id));
+    if (invalidIds.length > 0) {
+      return errorResponse(res, 'One or more subject IDs are invalid.', 400);
+    }
+
+    const uniqueIds = Array.from(new Set(ids.map((id) => id.toString())));
+    const subjects = await Subject.find({ _id: { $in: uniqueIds } });
+    if (subjects.length === 0) {
+      return errorResponse(res, 'None of the specified subjects were found.', 404);
+    }
+
+    // Check usage in TimetableEntry
+    const referencedSubjectIds = await TimetableEntry.find({ subject: { $in: uniqueIds } }).distinct('subject');
+    const referencedSet = new Set(referencedSubjectIds.map((id) => id.toString()));
+
+    const blockedItems = subjects.filter((s) => referencedSet.has(s._id.toString()));
+    const safeToDelete = subjects.filter((s) => !referencedSet.has(s._id.toString()));
+
+    if (safeToDelete.length === 0) {
+      return errorResponse(
+        res,
+        `Cannot delete any of the selected subject(s). All ${blockedItems.length} selected subject(s) are currently scheduled in active timetable sessions.`,
+        400,
+        null,
+        {
+          code: 'REFERENTIAL_INTEGRITY_VIOLATION',
+          details: { blockedSubjects: blockedItems.map((s) => `${s.name} (${s.code})`) },
+          recommendation: 'Reassign or remove linked timetable sessions before deleting these subjects.'
+        }
+      );
+    }
+
+    const safeIds = safeToDelete.map((s) => s._id);
+    const deleteResult = await Subject.deleteMany({ _id: { $in: safeIds } });
+
+    const isPartial = blockedItems.length > 0;
+    const message = isPartial
+      ? `${deleteResult.deletedCount} subject(s) deleted successfully. ${blockedItems.length} subject(s) could not be deleted because they are assigned to timetable sessions.`
+      : `${deleteResult.deletedCount} subject(s) deleted successfully.`;
+
+    return successResponse(
+      res,
+      {
+        deletedCount: deleteResult.deletedCount,
+        deletedIds: safeIds.map((id) => id.toString()),
+        blockedCount: blockedItems.length,
+        blockedItems: blockedItems.map((s) => ({ id: s._id, name: s.name, code: s.code })),
+        isPartial
+      },
+      message
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getSubjects,
   getSubjectById,
   createSubject,
   updateSubject,
-  deleteSubject
+  deleteSubject,
+  bulkDeleteSubjects
 };

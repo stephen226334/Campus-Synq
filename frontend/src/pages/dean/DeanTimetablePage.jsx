@@ -4,6 +4,7 @@ import { Calendar, Filter, Clock, MapPin, Users, BookOpen, Loader2 } from 'lucid
 import deanApi from '../../api/dean';
 import { formatAcademicSection, formatAcademicStatus } from '../../utils/academicFormatter';
 import useRealtimeEvents from '../../hooks/useRealtimeEvents';
+import { sortTimetableEntries, formatPeriodTimeRange } from '../../utils/timetableSort';
 
 export const DeanTimetablePage = () => {
   const { openEntityDrawer } = useOutletContext() || {};
@@ -49,7 +50,7 @@ export const DeanTimetablePage = () => {
       if (selectedFaculty) params.facultyId = selectedFaculty;
 
       const res = await deanApi.getMasterTimetable(params);
-      setTimetableEntries(res.data || []);
+      setTimetableEntries(sortTimetableEntries(res.data || []));
     } catch (err) {
       console.error('Failed to load master timetable:', err);
     } finally {
@@ -170,7 +171,7 @@ export const DeanTimetablePage = () => {
               <tbody>
                 {timetableEntries.map((entry) => {
                   const isSubstituted = entry.isSubstituted && entry.substituteFaculty;
-                  const time12h = `${entry.period?.startTime || ''} – ${entry.period?.endTime || ''}`;
+                  const time12h = formatPeriodTimeRange(entry.period);
                   const sessionStatus = isSubstituted ? 'SUBSTITUTED' : (entry.status || 'UPCOMING');
 
                   return (

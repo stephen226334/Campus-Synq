@@ -13,6 +13,7 @@ router.get('/', auditoriumController.getAuditoriums);
 router.get('/:id', idParamValidator, validateMiddleware, auditoriumController.getAuditoriumById);
 router.post('/', auditoriumCreateValidator, validateMiddleware, auditoriumController.createAuditorium);
 router.put('/:id', idParamValidator, auditoriumUpdateValidator, validateMiddleware, auditoriumController.updateAuditorium);
+router.delete('/bulk', auditoriumController.bulkDeleteAuditoriums);
 router.delete('/:id', idParamValidator, validateMiddleware, auditoriumController.deleteAuditorium);
 
 module.exports = router;

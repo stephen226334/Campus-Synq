@@ -14,6 +14,7 @@ import { useAuth } from '../../context/AuthContext';
 import LoadingSkeleton from '../../components/common/LoadingSkeleton';
 import SubstitutionModal from '../../components/faculty/SubstitutionModal';
 import useRealtimeEvents from '../../hooks/useRealtimeEvents';
+import { sortTimetableEntries, parseTimeToMinutes } from '../../utils/timetableSort';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -61,24 +62,11 @@ export const FacultyTimetablePage = () => {
 
   useRealtimeEvents(() => fetchSchedule(true));
 
-  // Parse "9:00 AM" to minutes from midnight
-  const parseTimeToMinutes = (timeStr) => {
-    if (!timeStr) return null;
-    const match = timeStr.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-    if (!match) return null;
-    let h = parseInt(match[1], 10);
-    const m = parseInt(match[2], 10);
-    const ampm = match[3].toUpperCase();
-    if (ampm === 'AM' && h === 12) h = 0;
-    if (ampm === 'PM' && h !== 12) h += 12;
-    return h * 60 + m;
-  };
-
   const filteredSessions = useMemo(() => {
     const currentWeekday = currentTime.toLocaleDateString('en-US', { weekday: 'long' });
     const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
 
-    return weeklySessions
+    const matched = weeklySessions
       .filter((s) => s.day === selectedDay)
       .filter((s) => {
         if (!searchQuery.trim()) return true;
@@ -89,14 +77,14 @@ export const FacultyTimetablePage = () => {
           s.section?.name?.toLowerCase().includes(q) ||
           s.roomDetails?.roomNumber?.toLowerCase().includes(q)
         );
-      })
-      .sort((a, b) => (a.period?.order || 0) - (b.period?.order || 0))
-      .map((s) => {
-        let statusLabel = 'SCHEDULED';
-        if (selectedDay === currentWeekday) {
-          const startMin = parseTimeToMinutes(s.period?.startTime);
-          const endMin = parseTimeToMinutes(s.period?.endTime);
-          if (startMin !== null && endMin !== null) {
+      });
+
+    return sortTimetableEntries(matched).map((s) => {
+      let statusLabel = 'SCHEDULED';
+      if (selectedDay === currentWeekday) {
+        const startMin = parseTimeToMinutes(s.period?.startTime);
+        const endMin = parseTimeToMinutes(s.period?.endTime);
+        if (startMin !== Number.MAX_SAFE_INTEGER && endMin !== Number.MAX_SAFE_INTEGER) {
             if (currentMinutes >= startMin && currentMinutes < endMin) {
               statusLabel = 'CURRENT';
             } else if (currentMinutes < startMin) {

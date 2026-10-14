@@ -13,6 +13,7 @@ router.get('/', subjectController.getSubjects);
 router.get('/:id', idParamValidator, validateMiddleware, subjectController.getSubjectById);
 router.post('/', subjectCreateValidator, validateMiddleware, subjectController.createSubject);
 router.put('/:id', idParamValidator, subjectUpdateValidator, validateMiddleware, subjectController.updateSubject);
+router.delete('/bulk', subjectController.bulkDeleteSubjects);
 router.delete('/:id', idParamValidator, validateMiddleware, subjectController.deleteSubject);
 
 module.exports = router;

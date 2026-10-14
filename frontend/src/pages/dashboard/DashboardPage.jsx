@@ -22,6 +22,7 @@ import Badge from '../../components/common/Badge';
 import LoadingSkeleton from '../../components/common/LoadingSkeleton';
 import EmptyState from '../../components/common/EmptyState';
 import { useToast } from '../../context/ToastContext';
+import { sortTimetableEntries } from '../../utils/timetableSort';
 
 // 12-hour time format helper ensuring no 24h clock strings display
 const formatTime12h = (time) => {
@@ -75,7 +76,11 @@ export const DashboardPage = () => {
     todayClassesCount: 0
   };
 
-  const todaySchedule = stats?.todaySchedule || { weekday: '', classes: [] };
+  const rawSchedule = stats?.todaySchedule || { weekday: '', classes: [] };
+  const todaySchedule = {
+    ...rawSchedule,
+    classes: sortTimetableEntries(rawSchedule.classes || [])
+  };
   const recentSubjects = stats?.recentData?.subjects || [];
   const recentClassrooms = stats?.recentData?.classrooms || [];
   const recentSections = stats?.recentData?.sections || [];
@@ -253,10 +258,12 @@ export const DashboardPage = () => {
                   {todaySchedule.classes.map((cls) => (
                     <tr key={cls._id}>
                       <td>
-                        <span className="period-slot-badge">{cls.period?.periodNumber}</span>
+                        <span className="period-slot-badge">{cls.period?.periodNumber || 'Unassigned'}</span>
                       </td>
                       <td className="time-interval-text">
-                        {formatTime12h(cls.period?.startTime)} - {formatTime12h(cls.period?.endTime)}
+                        {cls.period?.startTime && cls.period?.endTime
+                          ? `${formatTime12h(cls.period.startTime)} - ${formatTime12h(cls.period.endTime)}`
+                          : (cls.period?.startTime ? formatTime12h(cls.period.startTime) : 'Time Unspecified')}
                       </td>
                       <td>
                         <div className="subject-display-cell">

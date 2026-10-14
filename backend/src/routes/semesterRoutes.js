@@ -13,6 +13,7 @@ router.get('/', semesterController.getSemesters);
 router.get('/:id', idParamValidator, validateMiddleware, semesterController.getSemesterById);
 router.post('/', semesterCreateValidator, validateMiddleware, semesterController.createSemester);
 router.put('/:id', idParamValidator, semesterUpdateValidator, validateMiddleware, semesterController.updateSemester);
+router.delete('/bulk', semesterController.bulkDeleteSemesters);
 router.delete('/:id', idParamValidator, validateMiddleware, semesterController.deleteSemester);
 
 module.exports = router;

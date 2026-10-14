@@ -17,6 +17,7 @@ router.get('/', facultyController.getFacultyList);
 router.get('/:id', idParamValidator, validateMiddleware, facultyController.getFacultyById);
 router.post('/', facultyCreateValidator, validateMiddleware, facultyController.createFaculty);
 router.put('/:id', idParamValidator, facultyUpdateValidator, validateMiddleware, facultyController.updateFaculty);
+router.delete('/bulk', facultyController.bulkDeleteFaculty);
 router.delete('/:id', idParamValidator, validateMiddleware, facultyController.deleteFaculty);
 router.post('/:id/resend-credentials', idParamValidator, validateMiddleware, facultyController.resendCredentials);
 router.get('/:id/timetable', idParamValidator, validateMiddleware, facultyController.getFacultyTimetable);

@@ -14,6 +14,7 @@ import TodaySchedule from '../../components/faculty/TodaySchedule';
 import SubstitutionCard from '../../components/faculty/SubstitutionCard';
 import FacultyInfoCard from '../../components/faculty/FacultyInfoCard';
 import SubstitutionModal from '../../components/faculty/SubstitutionModal';
+import { parseTimeToMinutes, sortTimetableEntries } from '../../utils/timetableSort';
 
 export const FacultyDashboardPage = () => {
   const { user } = useAuth();
@@ -79,20 +80,7 @@ export const FacultyDashboardPage = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // Parse "9:00 AM" to minutes from midnight
-  const parseTimeToMinutes = (timeStr) => {
-    if (!timeStr) return null;
-    const match = timeStr.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-    if (!match) return null;
-    let h = parseInt(match[1], 10);
-    const m = parseInt(match[2], 10);
-    const ampm = match[3].toUpperCase();
-    if (ampm === 'AM' && h === 12) h = 0;
-    if (ampm === 'PM' && h !== 12) h += 12;
-    return h * 60 + m;
-  };
-
-  // Recompute current class & next class dynamically
+  // Recompute current class & next class dynamically in strict chronological order
   const dynamicClasses = useMemo(() => {
     if (!dashboardData?.todaySchedule) {
       return { currentClass: null, nextClass: null, processedSchedule: [] };
@@ -102,7 +90,9 @@ export const FacultyDashboardPage = () => {
     let current = null;
     let next = null;
 
-    const processedSchedule = dashboardData.todaySchedule.map((session) => {
+    const sortedSchedule = sortTimetableEntries(dashboardData.todaySchedule);
+
+    const processedSchedule = sortedSchedule.map((session) => {
       const startMin = parseTimeToMinutes(session.period?.startTime);
       const endMin = parseTimeToMinutes(session.period?.endTime);
 
@@ -110,7 +100,7 @@ export const FacultyDashboardPage = () => {
       let minutesUntilStart = null;
       let minutesRemaining = null;
 
-      if (startMin !== null && endMin !== null) {
+      if (startMin !== Number.MAX_SAFE_INTEGER && endMin !== Number.MAX_SAFE_INTEGER) {
         if (currentMinutes >= startMin && currentMinutes < endMin) {
           statusLabel = 'CURRENT';
           minutesRemaining = endMin - currentMinutes;
