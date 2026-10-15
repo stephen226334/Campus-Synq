@@ -4187,24 +4187,29 @@
    LIVE ACADEMIC STATUS MODAL & OPERATIONAL DRILL-DOWN VIEWS
    ========================================================================== */
 .dp-modal-card.dp-live-modal-card {
-  max-width: 920px;
-  width: 95%;
-  max-height: 90vh;
+  max-width: 1040px;
+  width: 94vw;
+  max-height: 88vh;
+  height: 88vh;
   display: flex;
   flex-direction: column;
   padding: 0;
   border-radius: var(--dp-radius-lg);
   overflow: hidden;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
+  background-color: var(--dp-card);
+  border: 1px solid var(--dp-border);
 }
 
 .dp-live-modal-header {
-  padding: 20px 24px;
+  padding: 18px 24px;
   background-color: var(--dp-card);
   border-bottom: 1px solid var(--dp-border);
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  flex-shrink: 0;
 }
 
 .dp-live-modal-title-group {
@@ -4221,12 +4226,13 @@
 }
 
 .dp-live-pulse-dot {
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background-color: #EF4444;
   box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
   animation: dp-live-pulse 1.8s infinite;
+  flex-shrink: 0;
 }
 
 @keyframes dp-live-pulse {
@@ -4236,7 +4242,7 @@
 }
 
 .dp-live-modal-title {
-  font-size: 1.25rem;
+  font-size: 1.2rem;
   font-weight: 800;
   color: var(--dp-text);
   letter-spacing: -0.01em;
@@ -4268,8 +4274,35 @@
 
 .dp-live-modal-subtitle {
   margin: 0;
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--dp-secondary);
+}
+
+.dp-modal-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--dp-radius-sm);
+  border: 1px solid var(--dp-border);
+  background-color: var(--dp-surface);
+  color: var(--dp-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.dp-modal-close-btn:hover {
+  background-color: #FEE2E2;
+  color: #DC2626;
+  border-color: #FCA5A5;
+}
+
+[data-theme='dark'] .dp-modal-close-btn:hover {
+  background-color: rgba(239, 68, 68, 0.2);
+  color: #FCA5A5;
+  border-color: rgba(239, 68, 68, 0.4);
 }
 
 .dp-live-conflict-banner {
@@ -4280,6 +4313,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 [data-theme='dark'] .dp-live-conflict-banner {
@@ -4324,13 +4358,28 @@
   letter-spacing: 0.03em;
 }
 
+/* Horizontal Tab Navigation */
 .dp-live-modal-tabs {
   display: flex;
+  align-items: center;
   border-bottom: 1px solid var(--dp-border);
   background-color: var(--dp-surface);
   overflow-x: auto;
-  padding: 0 16px;
-  gap: 4px;
+  overflow-y: hidden;
+  padding: 0 20px;
+  gap: 6px;
+  flex-shrink: 0;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.dp-live-modal-tabs::-webkit-scrollbar {
+  height: 4px;
+}
+
+.dp-live-modal-tabs::-webkit-scrollbar-thumb {
+  background: var(--dp-border);
+  border-radius: 4px;
 }
 
 .dp-live-tab-btn {
@@ -4346,6 +4395,7 @@
   cursor: pointer;
   border-bottom: 2px solid transparent;
   white-space: nowrap;
+  flex-shrink: 0;
   transition: all 0.15s ease;
 }
 
@@ -4393,17 +4443,19 @@
   color: #D97706;
 }
 
+/* Modal Body (Scrolls Vertically) */
 .dp-live-modal-body {
   padding: 20px 24px;
   overflow-y: auto;
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .dp-live-filter-toolbar {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  margin-bottom: 18px;
+  margin-bottom: 20px;
 }
 
 .dp-live-search-box {
@@ -4422,8 +4474,8 @@
 
 .dp-live-search-input {
   width: 100%;
-  height: 38px;
-  padding: 0 34px 0 36px;
+  height: 40px;
+  padding: 0 34px 0 38px;
   background-color: var(--dp-card);
   border: 1px solid var(--dp-border);
   border-radius: var(--dp-radius-sm);
@@ -4436,6 +4488,44 @@
 .dp-live-search-input:focus {
   border-color: var(--dp-primary);
   box-shadow: 0 0 0 3px var(--dp-primary-soft);
+}
+
+.dp-search-clear-btn {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  color: var(--dp-muted);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dp-search-clear-btn:hover {
+  color: var(--dp-text);
+}
+
+.dp-venue-filter-controls-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.dp-filter-group-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--dp-muted);
+  margin-right: 2px;
 }
 
 .dp-live-pill-group {
@@ -4455,6 +4545,7 @@
   border-radius: 20px;
   cursor: pointer;
   transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
 .dp-pill-filter-btn:hover {
@@ -4471,23 +4562,34 @@
 .dp-pill-filter-btn.available.active {
   background-color: #059669;
   border-color: #059669;
+  color: #FFFFFF;
+}
+
+.dp-pill-filter-btn.occupied.active {
+  background-color: #DC2626;
+  border-color: #DC2626;
+  color: #FFFFFF;
 }
 
 .dp-pill-filter-btn.teaching.active {
   background-color: #D97706;
   border-color: #D97706;
+  color: #FFFFFF;
 }
 
 .dp-pill-filter-btn.not-scheduled.active {
-  background-color: #3B82F6;
-  border-color: #3B82F6;
+  background-color: #2563EB;
+  border-color: #2563EB;
+  color: #FFFFFF;
 }
 
 .dp-pill-filter-btn.unknown.active {
   background-color: #64748B;
   border-color: #64748B;
+  color: #FFFFFF;
 }
 
+/* Card Lists (Live Classes, Occupied Venues, Teaching Faculty) */
 .dp-live-cards-list {
   display: flex;
   flex-direction: column;
@@ -4537,6 +4639,11 @@
   border-radius: 4px;
 }
 
+[data-theme='dark'] .dp-mins-remaining {
+  background: rgba(239, 68, 68, 0.2);
+  color: #FCA5A5;
+}
+
 .dp-conflict-tag {
   display: inline-flex;
   align-items: center;
@@ -4547,6 +4654,11 @@
   font-weight: 700;
   padding: 2px 8px;
   border-radius: 4px;
+}
+
+[data-theme='dark'] .dp-conflict-tag {
+  background-color: rgba(239, 68, 68, 0.2);
+  color: #FCA5A5;
 }
 
 .dp-click-action-hint {
@@ -4627,7 +4739,7 @@
   color: #FCA5A5;
 }
 
-/* Venues Occupied & Available */
+/* Identifiers & Badges */
 .dp-room-identifier-badge {
   font-size: 12px;
   font-weight: 800;
@@ -4636,6 +4748,7 @@
   padding: 2px 8px;
   border-radius: 4px;
   border: 1px solid var(--dp-primary-border);
+  letter-spacing: 0.02em;
 }
 
 .dp-room-type-tag {
@@ -4643,169 +4756,354 @@
   font-weight: 600;
   color: var(--dp-secondary);
   background-color: var(--dp-surface);
-  padding: 2px 6px;
+  padding: 2px 7px;
   border-radius: 4px;
+  border: 1px solid var(--dp-border);
+}
+
+.dp-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.02em;
+}
+
+.dp-status-badge.live {
+  background-color: #FEE2E2;
+  color: #DC2626;
 }
 
 .dp-status-badge.occupied {
   background-color: #FEE2E2;
   color: #DC2626;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 2px 7px;
-  border-radius: 4px;
 }
 
 .dp-status-badge.available {
   background-color: #DEF7EC;
   color: #059669;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 2px 7px;
-  border-radius: 4px;
 }
 
 .dp-status-badge.teaching {
   background-color: #FEF3C7;
   color: #D97706;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 2px 7px;
-  border-radius: 4px;
 }
 
 .dp-status-badge.not-scheduled {
   background-color: #EFF6FF;
   color: #2563EB;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 2px 7px;
-  border-radius: 4px;
 }
 
 .dp-status-badge.unknown {
   background-color: #F1F5F9;
   color: #64748B;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 2px 7px;
-  border-radius: 4px;
 }
 
-.dp-venue-title-row {
-  margin-bottom: 10px;
+[data-theme='dark'] .dp-status-badge.live,
+[data-theme='dark'] .dp-status-badge.occupied {
+  background-color: rgba(239, 68, 68, 0.18);
+  color: #FCA5A5;
+}
+
+[data-theme='dark'] .dp-status-badge.available {
+  background-color: rgba(16, 185, 129, 0.18);
+  color: #6EE7B7;
+}
+
+[data-theme='dark'] .dp-status-badge.teaching {
+  background-color: rgba(245, 158, 11, 0.18);
+  color: #FCD34D;
+}
+
+[data-theme='dark'] .dp-status-badge.not-scheduled {
+  background-color: rgba(59, 130, 246, 0.18);
+  color: #93C5FD;
+}
+
+[data-theme='dark'] .dp-status-badge.unknown {
+  background-color: rgba(100, 116, 139, 0.18);
+  color: #CBD5E1;
+}
+
+/* ==========================================================================
+   REDESIGNED AVAILABLE VENUES CARD GRID
+   ========================================================================== */
+.dp-venue-card-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 1100px) {
+  .dp-venue-card-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 820px) {
+  .dp-venue-card-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 540px) {
+  .dp-venue-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dp-venue-card {
+  background-color: var(--dp-card);
+  border: 1px solid var(--dp-border);
+  border-radius: var(--dp-radius-md);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+
+.dp-venue-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+  border-color: var(--dp-primary-border);
+}
+
+.dp-venue-card.is-available:hover {
+  border-color: #10B981;
+}
+
+.dp-venue-card.is-occupied:hover {
+  border-color: #EF4444;
+}
+
+.dp-venue-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dp-venue-header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.dp-venue-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
 }
 
 .dp-venue-name {
-  font-size: 1rem;
+  font-size: 14.5px;
   font-weight: 700;
   color: var(--dp-text);
+  line-height: 1.35;
+  word-break: break-word;
 }
 
-.dp-venue-meta {
+.dp-venue-meta-pills {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   font-size: 12px;
   color: var(--dp-secondary);
 }
 
-.dp-venue-running-box {
-  background-color: var(--dp-surface);
-  border: 1px solid var(--dp-border);
+.dp-venue-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dp-venue-occupied-info {
+  background-color: rgba(239, 68, 68, 0.05);
+  border: 1px solid rgba(239, 68, 68, 0.2);
   border-radius: var(--dp-radius-sm);
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  margin-top: 4px;
 }
 
-.dp-venue-running-box.teaching {
-  border-left: 3px solid #F59E0B;
+[data-theme='dark'] .dp-venue-occupied-info {
+  background-color: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.25);
 }
 
-.dp-running-box-header {
+.dp-occupied-status-line {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 12px;
   font-weight: 700;
-  color: var(--dp-text);
+  color: #DC2626;
 }
 
-.dp-period-badge.sm {
-  font-size: 10.5px;
-  padding: 1px 6px;
+[data-theme='dark'] .dp-occupied-status-line {
+  color: #F87171;
 }
 
-.dp-time-text.sm {
-  font-size: 11.5px;
-  color: var(--dp-secondary);
+.dp-occupied-icon {
+  flex-shrink: 0;
 }
 
-.dp-running-details {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  font-size: 12.5px;
-  color: var(--dp-text);
-}
-
-/* Available Venue Grid */
-.dp-venue-grid-display {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 12px;
-}
-
-.dp-available-venue-card {
-  background-color: var(--dp-card);
-  border: 1px solid var(--dp-border);
-  border-radius: var(--dp-radius-md);
-  padding: 14px;
-  cursor: pointer;
+.dp-occupied-class-details {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  transition: all 0.15s ease;
+  gap: 3px;
+  font-size: 12px;
 }
 
-.dp-available-venue-card:hover {
-  transform: translateY(-2px);
-  border-color: #10B981;
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.12);
-}
-
-.dp-avail-card-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.dp-avail-venue-name {
-  font-size: 14px;
-  font-weight: 700;
+.dp-occupied-subject-line {
   color: var(--dp-text);
+  font-weight: 600;
 }
 
-.dp-avail-venue-meta {
+.dp-occupied-sub-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  font-size: 12px;
+  gap: 8px;
   color: var(--dp-secondary);
+  font-size: 11.5px;
 }
 
-.dp-avail-card-footer {
-  margin-top: auto;
-  padding-top: 8px;
-  border-top: 1px solid var(--dp-border);
+.dp-venue-available-info {
+  background-color: rgba(16, 185, 129, 0.05);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: var(--dp-radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+[data-theme='dark'] .dp-venue-available-info {
+  background-color: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+.dp-available-status-line {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 6px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   color: #059669;
 }
 
-/* Faculty Cards */
+[data-theme='dark'] .dp-available-status-line {
+  color: #34D399;
+}
+
+.dp-avail-check-icon {
+  flex-shrink: 0;
+}
+
+.dp-avail-sub-text {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--dp-secondary);
+  line-height: 1.4;
+}
+
+.dp-venue-card-footer {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--dp-border);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.dp-venue-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dp-primary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.dp-venue-action-btn:hover {
+  color: var(--dp-primary-hover);
+  text-decoration: underline;
+}
+
+/* ==========================================================================
+   REDESIGNED FACULTY AVAILABILITY CARD GRID
+   ========================================================================== */
+.dp-faculty-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 820px) {
+  .dp-faculty-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dp-faculty-card {
+  background-color: var(--dp-card);
+  border: 1px solid var(--dp-border);
+  border-radius: var(--dp-radius-md);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 14px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dp-faculty-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--dp-primary-border);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+}
+
+.dp-faculty-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dp-faculty-identity {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dp-faculty-name-main {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--dp-text);
+  line-height: 1.3;
+}
+
 .dp-faculty-id-pill {
   font-size: 11px;
   font-weight: 700;
@@ -4814,63 +5112,230 @@
   padding: 2px 8px;
   border-radius: 4px;
   border: 1px solid var(--dp-border);
+  letter-spacing: 0.02em;
 }
 
-.dp-faculty-card-header {
-  margin-bottom: 8px;
-}
-
-.dp-faculty-name-main {
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: var(--dp-text);
-}
-
-.dp-faculty-meta-sub {
+.dp-faculty-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
   font-size: 12px;
   color: var(--dp-secondary);
 }
 
-.dp-faculty-status-note {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 12.5px;
+.dp-faculty-dept-text {
   font-weight: 500;
 }
 
-.dp-faculty-status-note.available {
-  background-color: #DEF7EC;
-  color: #03543F;
+.dp-faculty-email-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--dp-muted);
+  font-size: 11.5px;
 }
 
-.dp-faculty-status-note.not-scheduled {
-  background-color: #EFF6FF;
-  color: #1E40AF;
+.dp-faculty-email-icon {
+  flex-shrink: 0;
 }
 
-.dp-faculty-status-note.unknown {
-  background-color: #F1F5F9;
-  color: #475569;
+.dp-faculty-card-body-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
-[data-theme='dark'] .dp-faculty-status-note.available {
-  background-color: rgba(16, 185, 129, 0.15);
-  color: #6EE7B7;
+/* 1. Teaching Box */
+.dp-faculty-teaching-box {
+  background-color: rgba(245, 158, 11, 0.06);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-left: 3px solid #F59E0B;
+  border-radius: var(--dp-radius-sm);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-[data-theme='dark'] .dp-faculty-status-note.not-scheduled {
-  background-color: rgba(59, 130, 246, 0.15);
-  color: #93C5FD;
+[data-theme='dark'] .dp-faculty-teaching-box {
+  background-color: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.3);
 }
 
-[data-theme='dark'] .dp-faculty-status-note.unknown {
-  background-color: rgba(100, 116, 139, 0.15);
-  color: #CBD5E1;
+.dp-teaching-box-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #B45309;
 }
 
+[data-theme='dark'] .dp-teaching-box-header {
+  color: #FCD34D;
+}
+
+.dp-teaching-icon {
+  color: #F59E0B;
+  flex-shrink: 0;
+}
+
+.dp-teaching-box-title {
+  margin-right: 4px;
+}
+
+.dp-teaching-box-subject-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.dp-teaching-subject-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--dp-text);
+}
+
+.dp-subject-code-tag {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background-color: var(--dp-surface);
+  border: 1px solid var(--dp-border);
+  color: var(--dp-secondary);
+}
+
+.dp-teaching-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.dp-teaching-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dp-meta-lbl {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--dp-muted);
+  letter-spacing: 0.04em;
+}
+
+.dp-meta-val {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dp-text);
+}
+
+/* 2. Available Box */
+.dp-faculty-status-box.available {
+  background-color: rgba(16, 185, 129, 0.06);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-left: 3px solid #10B981;
+  border-radius: var(--dp-radius-sm);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+[data-theme='dark'] .dp-faculty-status-box.available {
+  background-color: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+/* 3. Not Scheduled Box */
+.dp-faculty-status-box.not-scheduled {
+  background-color: rgba(59, 130, 246, 0.06);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-left: 3px solid #3B82F6;
+  border-radius: var(--dp-radius-sm);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+[data-theme='dark'] .dp-faculty-status-box.not-scheduled {
+  background-color: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+/* 4. Unknown Box */
+.dp-faculty-status-box.unknown {
+  background-color: rgba(100, 116, 139, 0.06);
+  border: 1px solid rgba(100, 116, 139, 0.25);
+  border-left: 3px solid #64748B;
+  border-radius: var(--dp-radius-sm);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+[data-theme='dark'] .dp-faculty-status-box.unknown {
+  background-color: rgba(100, 116, 139, 0.12);
+  border-color: rgba(100, 116, 139, 0.3);
+}
+
+.dp-faculty-box-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dp-faculty-box-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--dp-text);
+}
+
+.dp-faculty-box-desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--dp-secondary);
+  line-height: 1.45;
+}
+
+.dp-faculty-card-footer {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--dp-border);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.dp-faculty-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dp-primary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.dp-faculty-action-btn:hover {
+  color: var(--dp-primary-hover);
+  text-decoration: underline;
+}
+
+/* Modal Footer & Stats */
 .dp-live-modal-footer-stats {
   display: flex;
   align-items: center;
@@ -4886,10 +5351,17 @@
     grid-template-columns: 1fr;
   }
   .dp-live-modal-tabs {
-    padding: 0 8px;
+    padding: 0 12px;
+  }
+  .dp-live-modal-header {
+    padding: 16px;
+  }
+  .dp-live-modal-body {
+    padding: 16px;
   }
   .dp-live-modal-footer-stats {
     display: none;
   }
 }
+
 

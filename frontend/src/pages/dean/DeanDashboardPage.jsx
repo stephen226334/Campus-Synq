@@ -283,6 +283,7 @@ export const DeanDashboardPage = () => {
             {/* 2. CLASSES RUNNING NOW */}
             <div
               className="dp-stat-card"
+              id="kpi-card-classes-running"
               onClick={() => handleOpenLiveModal('LIVE_CLASSES')}
               title="Inspect live running classes"
             >
@@ -299,6 +300,7 @@ export const DeanDashboardPage = () => {
             {/* 3. AVAILABLE ROOMS */}
             <div
               className="dp-stat-card"
+              id="kpi-card-available-rooms"
               onClick={() => handleOpenLiveModal('AVAILABLE_ROOMS')}
               title="Inspect Free & Available Venues"
             >
@@ -313,6 +315,7 @@ export const DeanDashboardPage = () => {
             {/* 4. OCCUPIED ROOMS */}
             <div
               className="dp-stat-card"
+              id="kpi-card-occupied-rooms"
               onClick={() => handleOpenLiveModal('OCCUPIED_ROOMS')}
               title="Inspect Occupied Venues"
             >
@@ -327,6 +330,7 @@ export const DeanDashboardPage = () => {
             {/* 5. FACULTY TEACHING NOW */}
             <div
               className="dp-stat-card"
+              id="kpi-card-faculty-teaching"
               onClick={() => handleOpenLiveModal('TEACHING_FACULTY')}
               title="Inspect Faculty Currently Teaching"
             >
@@ -341,6 +345,7 @@ export const DeanDashboardPage = () => {
             {/* 6. FACULTY AVAILABLE */}
             <div
               className="dp-stat-card"
+              id="kpi-card-faculty-available"
               onClick={() => handleOpenLiveModal('AVAILABLE_FACULTY')}
               title="Inspect Available Faculty Directory"
             >

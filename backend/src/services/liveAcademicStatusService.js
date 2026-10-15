@@ -321,12 +321,16 @@ const calculateLiveAcademicStatus = async (options = {}) => {
           subject: primaryClass.subject,
           subjectCode: primaryClass.subjectCode,
           section: primaryClass.section,
+          semester: primaryClass.semester || '',
+          room: primaryClass.room,
+          roomType: primaryClass.roomType,
           faculty: primaryClass.faculty,
           facultyId: primaryClass.facultyId,
           period: primaryClass.period,
           time: primaryClass.time,
           startTime: primaryClass.startTime,
-          endTime: primaryClass.endTime
+          endTime: primaryClass.endTime,
+          minutesRemaining: primaryClass.minutesRemaining || 0
         },
         hasConflict: matchingLiveClasses.length > 1,
         conflictingClasses: matchingLiveClasses.length > 1
@@ -403,12 +407,14 @@ const calculateLiveAcademicStatus = async (options = {}) => {
           subject: primaryClass.subject,
           subjectCode: primaryClass.subjectCode,
           section: primaryClass.section,
+          semester: primaryClass.semester || '',
           room: primaryClass.room,
           roomType: primaryClass.roomType,
           period: primaryClass.period,
           time: primaryClass.time,
           startTime: primaryClass.startTime,
-          endTime: primaryClass.endTime
+          endTime: primaryClass.endTime,
+          minutesRemaining: primaryClass.minutesRemaining || 0
         },
         hasConflict: liveTeachingClasses.length > 1,
         conflictingClasses: liveTeachingClasses.length > 1

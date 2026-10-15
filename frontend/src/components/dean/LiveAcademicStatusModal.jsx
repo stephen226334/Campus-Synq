@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Activity,
@@ -13,10 +13,12 @@ import {
   CheckCircle2,
   X,
   ChevronRight,
-  ShieldAlert,
-  Layers,
   HelpCircle,
-  AlertCircle
+  AlertCircle,
+  Building,
+  GraduationCap,
+  Mail,
+  BookOpen
 } from 'lucide-react';
 import {
   formatAcademicSectionSplit,
@@ -35,18 +37,40 @@ export const LiveAcademicStatusModal = ({
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(initialTab);
   const [searchFilter, setSearchFilter] = useState('');
-  const [facultyCategoryFilter, setFacultyCategoryFilter] = useState('ALL');
   const [venueTypeFilter, setVenueTypeFilter] = useState('ALL');
+  const [venueAvailabilityFilter, setVenueAvailabilityFilter] = useState('ALL');
+  const [facultyCategoryFilter, setFacultyCategoryFilter] = useState('ALL');
 
-  // Keep active tab in sync when initialTab changes
-  React.useEffect(() => {
+  // Sync activeTab when initialTab or isOpen changes
+  useEffect(() => {
     if (initialTab) {
       setActiveTab(initialTab);
     }
     setSearchFilter('');
+    setVenueTypeFilter('ALL');
+    setVenueAvailabilityFilter('ALL');
+    setFacultyCategoryFilter('ALL');
   }, [initialTab, isOpen]);
 
-  if (!isOpen || !dashboardData) return null;
+  // Lock background scrolling and handle Escape key
+  useEffect(() => {
+    if (isOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+
+      const handleKeyDown = (e) => {
+        if (e.key === 'Escape') {
+          onClose();
+        }
+      };
+
+      window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        document.body.style.overflow = originalOverflow;
+        window.removeEventListener('keydown', handleKeyDown);
+      };
+    }
+  }, [isOpen, onClose]);
 
   const {
     liveStats = {},
@@ -56,77 +80,237 @@ export const LiveAcademicStatusModal = ({
     teachingFaculty = [],
     availableFaculty = [],
     conflicts = [],
-    currentAcademicContext = {}
-  } = dashboardData;
+    currentAcademicContext = {},
+    todaySchedule = []
+  } = dashboardData || {};
 
   const currentPeriod = currentAcademicContext.currentPeriod;
   const currentPeriodTiming = currentAcademicContext.currentPeriodTiming;
   const currentTime12 = currentAcademicContext.currentTime12;
   const todayDay = currentAcademicContext.todayDay;
 
-  // Filtered live classes
-  const filteredLiveClasses = currentlyActiveClasses.filter(c => {
-    if (!searchFilter.trim()) return true;
+  // 12-hour time formatter helper
+  const formatTime12h = (timeStr) => {
+    if (!timeStr) return '';
+    const trimmed = timeStr.trim();
+    if (/am|pm/i.test(trimmed)) return trimmed;
+    const match = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+    if (match) {
+      let hours = parseInt(match[1], 10);
+      const mins = match[2];
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12 || 12;
+      return `${hours}:${mins} ${ampm}`;
+    }
+    return trimmed;
+  };
+
+  const getOccupiedUntilText = (runningClass) => {
+    if (!runningClass) return 'Occupied by active class';
+    let end = runningClass.endTime || '';
+    if (!end && runningClass.time) {
+      const parts = runningClass.time.split(/[-–—]/);
+      end = parts[1]?.trim() || '';
+    }
+    if (end) {
+      const formattedEnd = formatTime12h(end);
+      return `Occupied until ${formattedEnd}`;
+    }
+    return 'Occupied by active class';
+  };
+
+  // Combine occupied and available venues into unified list for Available Venues Explorer
+  const allCampusVenues = useMemo(() => {
+    const occupied = (occupiedVenues || []).map(v => ({
+      ...v,
+      isOccupied: true,
+      statusBadge: 'OCCUPIED',
+      statusBadgeClass: 'occupied',
+      statusDescription: getOccupiedUntilText(v.runningClass)
+    }));
+    const available = (availableVenues || []).map(v => ({
+      ...v,
+      isOccupied: false,
+      statusBadge: 'AVAILABLE NOW',
+      statusBadgeClass: 'available',
+      statusDescription: 'Free at current time'
+    }));
+    return [...occupied, ...available].sort((a, b) =>
+      (a.identifier || '').localeCompare(b.identifier || '', undefined, { numeric: true })
+    );
+  }, [occupiedVenues, availableVenues]);
+
+  // Venue search matcher
+  const venueMatchesSearch = (v, q) => {
+    if (!q) return true;
+    const ident = (v.identifier || '').toLowerCase();
+    const name = (v.name || '').toLowerCase();
+    const type = (v.venueType || '').toLowerCase();
+    if (ident.includes(q) || name.includes(q) || type.includes(q)) return true;
+    if (v.runningClass) {
+      const sub = (v.runningClass.subject || '').toLowerCase();
+      const subCode = (v.runningClass.subjectCode || '').toLowerCase();
+      const fac = (v.runningClass.faculty || '').toLowerCase();
+      const sec = (v.runningClass.section || '').toLowerCase();
+      if (sub.includes(q) || subCode.includes(q) || fac.includes(q) || sec.includes(q)) return true;
+    }
+    return false;
+  };
+
+  // Venues matching search query
+  const venuesMatchingSearch = useMemo(() => {
+    const q = searchFilter.trim().toLowerCase();
+    return allCampusVenues.filter(v => venueMatchesSearch(v, q));
+  }, [allCampusVenues, searchFilter]);
+
+  // Synchronized Venue Counts (reflect active search query)
+  const venueTypeCounts = useMemo(() => {
+    return {
+      all: venuesMatchingSearch.length,
+      classroom: venuesMatchingSearch.filter(v => v.venueType?.toLowerCase() === 'classroom').length,
+      lab: venuesMatchingSearch.filter(v => v.venueType?.toLowerCase() === 'lab' || v.venueType?.toLowerCase() === 'laboratory').length,
+      auditorium: venuesMatchingSearch.filter(v => v.venueType?.toLowerCase() === 'auditorium').length
+    };
+  }, [venuesMatchingSearch]);
+
+  const venueStatusCounts = useMemo(() => {
+    return {
+      all: venuesMatchingSearch.length,
+      available: venuesMatchingSearch.filter(v => !v.isOccupied).length,
+      occupied: venuesMatchingSearch.filter(v => v.isOccupied).length
+    };
+  }, [venuesMatchingSearch]);
+
+  // Final filtered venues
+  const filteredVenues = useMemo(() => {
+    return venuesMatchingSearch.filter(v => {
+      // Type filter
+      if (venueTypeFilter !== 'ALL') {
+        const t = v.venueType?.toLowerCase();
+        if (venueTypeFilter === 'Classroom' && t !== 'classroom') return false;
+        if (venueTypeFilter === 'Lab' && t !== 'lab' && t !== 'laboratory') return false;
+        if (venueTypeFilter === 'Auditorium' && t !== 'auditorium') return false;
+      }
+      // Availability filter
+      if (venueAvailabilityFilter === 'AVAILABLE_NOW' && v.isOccupied) return false;
+      if (venueAvailabilityFilter === 'OCCUPIED' && !v.isOccupied) return false;
+      return true;
+    });
+  }, [venuesMatchingSearch, venueTypeFilter, venueAvailabilityFilter]);
+
+  // Faculty search matcher (Faculty Name, Faculty ID, and Subject Name or Code)
+  const facultyMatchesSearch = (faculty, q) => {
+    if (!q) return true;
+    const name = (faculty.fullName || '').toLowerCase();
+    const empId = (faculty.employeeId || '').toLowerCase();
+    const desig = (faculty.designation || '').toLowerCase();
+    const dept = (faculty.department || '').toLowerCase();
+    const email = (faculty.officialEmail || '').toLowerCase();
+    if (name.includes(q) || empId.includes(q) || desig.includes(q) || dept.includes(q) || email.includes(q)) {
+      return true;
+    }
+
+    // Match active teaching class subject/code
+    if (faculty.currentClass) {
+      const sub = (faculty.currentClass.subject || '').toLowerCase();
+      const code = (faculty.currentClass.subjectCode || '').toLowerCase();
+      if (sub.includes(q) || code.includes(q)) return true;
+    }
+
+    // Match upcoming class subject/code
+    if (faculty.nextClass) {
+      const sub = (faculty.nextClass.subject || '').toLowerCase();
+      const code = (faculty.nextClass.subjectCode || '').toLowerCase();
+      if (sub.includes(q) || code.includes(q)) return true;
+    }
+
+    // Match all today scheduled subjects for this faculty
+    const facultyIdStr = faculty.facultyId ? faculty.facultyId.toString() : '';
+    const assignedToday = (todaySchedule || []).filter(c =>
+      (c.facultyDocId && facultyIdStr && c.facultyDocId.toString() === facultyIdStr) ||
+      (c.facultyId && faculty.employeeId && c.facultyId === faculty.employeeId) ||
+      (c.faculty && faculty.fullName && c.faculty.toLowerCase() === faculty.fullName.toLowerCase())
+    );
+
+    for (const c of assignedToday) {
+      if (c.subject && c.subject.toLowerCase().includes(q)) return true;
+      if (c.subjectCode && c.subjectCode.toLowerCase().includes(q)) return true;
+    }
+
+    return false;
+  };
+
+  // Faculty matching search query
+  const facultyMatchingSearch = useMemo(() => {
+    const q = searchFilter.trim().toLowerCase();
+    return (availableFaculty || []).filter(f => facultyMatchesSearch(f, q));
+  }, [availableFaculty, searchFilter, todaySchedule]);
+
+  // Synchronized Faculty Counts (reflect active search query)
+  const facultyCounts = useMemo(() => {
+    return {
+      all: facultyMatchingSearch.length,
+      available: facultyMatchingSearch.filter(f => f.category === 'AVAILABLE_NOW').length,
+      teaching: facultyMatchingSearch.filter(f => f.category === 'TEACHING_NOW').length,
+      notScheduled: facultyMatchingSearch.filter(f => f.category === 'NOT_SCHEDULED_TODAY').length,
+      unknown: facultyMatchingSearch.filter(f => f.category === 'STATUS_UNKNOWN').length
+    };
+  }, [facultyMatchingSearch]);
+
+  // Final filtered faculty list
+  const filteredFaculty = useMemo(() => {
+    return facultyMatchingSearch.filter(f => {
+      if (facultyCategoryFilter === 'ALL') return true;
+      return f.category === facultyCategoryFilter;
+    });
+  }, [facultyMatchingSearch, facultyCategoryFilter]);
+
+  // Filtered Live Classes for Tab 1
+  const filteredLiveClasses = useMemo(() => {
+    if (!searchFilter.trim()) return currentlyActiveClasses;
     const q = searchFilter.toLowerCase();
-    return (
+    return currentlyActiveClasses.filter(c =>
       (c.subject && c.subject.toLowerCase().includes(q)) ||
       (c.subjectCode && c.subjectCode.toLowerCase().includes(q)) ||
       (c.faculty && c.faculty.toLowerCase().includes(q)) ||
       (c.section && c.section.toLowerCase().includes(q)) ||
       (c.room && c.room.toLowerCase().includes(q))
     );
-  });
+  }, [currentlyActiveClasses, searchFilter]);
 
-  // Filtered occupied venues
-  const filteredOccupiedVenues = occupiedVenues.filter(v => {
-    if (venueTypeFilter !== 'ALL' && v.venueType.toLowerCase() !== venueTypeFilter.toLowerCase()) {
-      return false;
-    }
-    if (!searchFilter.trim()) return true;
+  // Filtered Occupied Venues for Tab 2
+  const filteredOccupiedVenues = useMemo(() => {
+    return occupiedVenues.filter(v => {
+      if (venueTypeFilter !== 'ALL' && v.venueType?.toLowerCase() !== venueTypeFilter.toLowerCase()) {
+        return false;
+      }
+      if (!searchFilter.trim()) return true;
+      const q = searchFilter.toLowerCase();
+      return (
+        (v.identifier && v.identifier.toLowerCase().includes(q)) ||
+        (v.name && v.name.toLowerCase().includes(q)) ||
+        (v.runningClass?.subject && v.runningClass.subject.toLowerCase().includes(q)) ||
+        (v.runningClass?.faculty && v.runningClass.faculty.toLowerCase().includes(q)) ||
+        (v.runningClass?.section && v.runningClass.section.toLowerCase().includes(q))
+      );
+    });
+  }, [occupiedVenues, venueTypeFilter, searchFilter]);
+
+  // Filtered Teaching Faculty for Tab 4
+  const filteredTeachingFaculty = useMemo(() => {
+    if (!searchFilter.trim()) return teachingFaculty;
     const q = searchFilter.toLowerCase();
-    return (
-      (v.identifier && v.identifier.toLowerCase().includes(q)) ||
-      (v.name && v.name.toLowerCase().includes(q)) ||
-      (v.runningClass?.subject && v.runningClass.subject.toLowerCase().includes(q)) ||
-      (v.runningClass?.faculty && v.runningClass.faculty.toLowerCase().includes(q)) ||
-      (v.runningClass?.section && v.runningClass.section.toLowerCase().includes(q))
+    return teachingFaculty.filter(item =>
+      (item.fullName && item.fullName.toLowerCase().includes(q)) ||
+      (item.employeeId && item.employeeId.toLowerCase().includes(q)) ||
+      (item.department && item.department.toLowerCase().includes(q)) ||
+      (item.currentClass?.subject && item.currentClass.subject.toLowerCase().includes(q)) ||
+      (item.currentClass?.subjectCode && item.currentClass.subjectCode.toLowerCase().includes(q)) ||
+      (item.currentClass?.room && item.currentClass.room.toLowerCase().includes(q))
     );
-  });
+  }, [teachingFaculty, searchFilter]);
 
-  // Filtered available venues
-  const filteredAvailableVenues = availableVenues.filter(v => {
-    if (venueTypeFilter !== 'ALL' && v.venueType.toLowerCase() !== venueTypeFilter.toLowerCase()) {
-      return false;
-    }
-    if (!searchFilter.trim()) return true;
-    const q = searchFilter.toLowerCase();
-    return (
-      (v.identifier && v.identifier.toLowerCase().includes(q)) ||
-      (v.name && v.name.toLowerCase().includes(q)) ||
-      (v.venueType && v.venueType.toLowerCase().includes(q))
-    );
-  });
-
-  // Filtered faculty
-  const filteredFaculty = availableFaculty.filter(f => {
-    if (facultyCategoryFilter !== 'ALL' && f.category !== facultyCategoryFilter) {
-      return false;
-    }
-    if (!searchFilter.trim()) return true;
-    const q = searchFilter.toLowerCase();
-    return (
-      (f.fullName && f.fullName.toLowerCase().includes(q)) ||
-      (f.employeeId && f.employeeId.toLowerCase().includes(q)) ||
-      (f.designation && f.designation.toLowerCase().includes(q)) ||
-      (f.department && f.department.toLowerCase().includes(q)) ||
-      (f.currentClass?.subject && f.currentClass.subject.toLowerCase().includes(q))
-    );
-  });
-
-  const availableNowCount = availableFaculty.filter(f => f.category === 'AVAILABLE_NOW').length;
-  const teachingNowCount = teachingFaculty.length;
-  const notScheduledCount = availableFaculty.filter(f => f.category === 'NOT_SCHEDULED_TODAY').length;
-  const unknownCount = availableFaculty.filter(f => f.category === 'STATUS_UNKNOWN').length;
+  if (!isOpen || !dashboardData) return null;
 
   return (
     <div className="dp-modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
@@ -138,14 +322,14 @@ export const LiveAcademicStatusModal = ({
         <div className="dp-modal-header dp-live-modal-header">
           <div className="dp-live-modal-title-group">
             <div className="dp-live-modal-badge-row">
-              <span className="dp-live-pulse-dot"></span>
+              <span className="dp-live-pulse-dot" title="Live status updating in real-time"></span>
               <span className="dp-live-modal-title">Live Academic Operations</span>
               <span className="dp-live-timing-badge">
-                <Clock size={13} style={{ marginRight: '4px' }} />
+                <Clock size={13} style={{ marginRight: '5px' }} />
                 {currentTime12} • {todayDay}
               </span>
               <span className="dp-live-period-pill">
-                {currentPeriod ? `Period: ${currentPeriod} (${currentPeriodTiming})` : 'Break / Off-hours'}
+                {currentPeriod ? `Active Period: ${currentPeriod} (${currentPeriodTiming})` : 'Break / Off-hours'}
               </span>
             </div>
             <p className="dp-live-modal-subtitle">
@@ -157,6 +341,7 @@ export const LiveAcademicStatusModal = ({
             className="dp-modal-close-btn"
             onClick={onClose}
             aria-label="Close modal"
+            title="Close view (Esc)"
           >
             <X size={20} />
           </button>
@@ -180,7 +365,7 @@ export const LiveAcademicStatusModal = ({
           </div>
         )}
 
-        {/* TAB NAVIGATION BAR */}
+        {/* FIXED HORIZONTAL TAB NAVIGATION BAR */}
         <div className="dp-live-modal-tabs">
           <button
             type="button"
@@ -216,6 +401,8 @@ export const LiveAcademicStatusModal = ({
             onClick={() => {
               setActiveTab('AVAILABLE_ROOMS');
               setSearchFilter('');
+              setVenueTypeFilter('ALL');
+              setVenueAvailabilityFilter('ALL');
             }}
             id="tab-available-rooms"
           >
@@ -244,6 +431,7 @@ export const LiveAcademicStatusModal = ({
             onClick={() => {
               setActiveTab('AVAILABLE_FACULTY');
               setSearchFilter('');
+              setFacultyCategoryFilter('ALL');
             }}
             id="tab-available-faculty"
           >
@@ -253,99 +441,34 @@ export const LiveAcademicStatusModal = ({
           </button>
         </div>
 
-        {/* MODAL BODY */}
+        {/* MODAL BODY (SCROLLS VERTICALLY) */}
         <div className="dp-modal-body dp-live-modal-body">
-          {/* SEARCH & FILTER CONTROLS */}
-          <div className="dp-live-filter-toolbar">
-            <div className="dp-live-search-box">
-              <Search size={16} className="dp-live-search-icon" />
-              <input
-                type="text"
-                placeholder={
-                  activeTab === 'LIVE_CLASSES'
-                    ? 'Filter by subject, faculty, section or room...'
-                    : activeTab === 'OCCUPIED_ROOMS' || activeTab === 'AVAILABLE_ROOMS'
-                    ? 'Filter by venue name, room number or type...'
-                    : 'Filter by faculty name, ID, or subject...'
-                }
-                value={searchFilter}
-                onChange={(e) => setSearchFilter(e.target.value)}
-                className="dp-live-search-input"
-              />
-              {searchFilter && (
-                <button
-                  type="button"
-                  className="dp-search-clear-btn"
-                  onClick={() => setSearchFilter('')}
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-
-            {/* Sub-filters for Venues */}
-            {(activeTab === 'OCCUPIED_ROOMS' || activeTab === 'AVAILABLE_ROOMS') && (
-              <div className="dp-live-pill-group">
-                {['ALL', 'Classroom', 'Lab', 'Auditorium'].map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    className={`dp-pill-filter-btn ${venueTypeFilter === t ? 'active' : ''}`}
-                    onClick={() => setVenueTypeFilter(t)}
-                  >
-                    {t === 'ALL' ? 'All Venues' : t === 'Lab' ? 'Laboratories' : `${t}s`}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Sub-filters for Faculty Directory */}
-            {activeTab === 'AVAILABLE_FACULTY' && (
-              <div className="dp-live-pill-group">
-                <button
-                  type="button"
-                  className={`dp-pill-filter-btn ${facultyCategoryFilter === 'ALL' ? 'active' : ''}`}
-                  onClick={() => setFacultyCategoryFilter('ALL')}
-                >
-                  All ({availableFaculty.length})
-                </button>
-                <button
-                  type="button"
-                  className={`dp-pill-filter-btn available ${facultyCategoryFilter === 'AVAILABLE_NOW' ? 'active' : ''}`}
-                  onClick={() => setFacultyCategoryFilter('AVAILABLE_NOW')}
-                >
-                  Available Now ({availableNowCount})
-                </button>
-                <button
-                  type="button"
-                  className={`dp-pill-filter-btn teaching ${facultyCategoryFilter === 'TEACHING_NOW' ? 'active' : ''}`}
-                  onClick={() => setFacultyCategoryFilter('TEACHING_NOW')}
-                >
-                  Teaching Now ({teachingNowCount})
-                </button>
-                <button
-                  type="button"
-                  className={`dp-pill-filter-btn not-scheduled ${facultyCategoryFilter === 'NOT_SCHEDULED_TODAY' ? 'active' : ''}`}
-                  onClick={() => setFacultyCategoryFilter('NOT_SCHEDULED_TODAY')}
-                >
-                  Not Scheduled Today ({notScheduledCount})
-                </button>
-                {unknownCount > 0 && (
-                  <button
-                    type="button"
-                    className={`dp-pill-filter-btn unknown ${facultyCategoryFilter === 'STATUS_UNKNOWN' ? 'active' : ''}`}
-                    onClick={() => setFacultyCategoryFilter('STATUS_UNKNOWN')}
-                  >
-                    Status Unknown ({unknownCount})
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-
           {/* TAB 1: LIVE CLASSES NOW */}
           {activeTab === 'LIVE_CLASSES' && (
             <div>
+              <div className="dp-live-filter-toolbar">
+                <div className="dp-live-search-box">
+                  <Search size={16} className="dp-live-search-icon" />
+                  <input
+                    type="text"
+                    placeholder="Filter active classes by subject, faculty, section or room..."
+                    value={searchFilter}
+                    onChange={(e) => setSearchFilter(e.target.value)}
+                    className="dp-live-search-input"
+                  />
+                  {searchFilter && (
+                    <button
+                      type="button"
+                      className="dp-search-clear-btn"
+                      onClick={() => setSearchFilter('')}
+                      aria-label="Clear search"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+
               {filteredLiveClasses.length > 0 ? (
                 <div className="dp-live-cards-list">
                   {filteredLiveClasses.map((item) => {
@@ -465,11 +588,47 @@ export const LiveAcademicStatusModal = ({
           {/* TAB 2: OCCUPIED ROOMS */}
           {activeTab === 'OCCUPIED_ROOMS' && (
             <div>
+              <div className="dp-live-filter-toolbar">
+                <div className="dp-live-search-box">
+                  <Search size={16} className="dp-live-search-icon" />
+                  <input
+                    type="text"
+                    placeholder="Filter occupied rooms by venue name, room number, or active class..."
+                    value={searchFilter}
+                    onChange={(e) => setSearchFilter(e.target.value)}
+                    className="dp-live-search-input"
+                  />
+                  {searchFilter && (
+                    <button
+                      type="button"
+                      className="dp-search-clear-btn"
+                      onClick={() => setSearchFilter('')}
+                      aria-label="Clear search"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                <div className="dp-live-pill-group">
+                  {['ALL', 'Classroom', 'Lab', 'Auditorium'].map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      className={`dp-pill-filter-btn ${venueTypeFilter === t ? 'active' : ''}`}
+                      onClick={() => setVenueTypeFilter(t)}
+                    >
+                      {t === 'ALL' ? 'All Venues' : t === 'Lab' ? 'Laboratories' : `${t}s`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {filteredOccupiedVenues.length > 0 ? (
                 <div className="dp-live-cards-list">
                   {filteredOccupiedVenues.map((v) => (
                     <div
-                      key={v.venueId}
+                      key={v.venueId || v.identifier}
                       className={`dp-live-item-card ${v.hasConflict ? 'conflict-border' : ''}`}
                       onClick={() => {
                         onClose();
@@ -491,7 +650,7 @@ export const LiveAcademicStatusModal = ({
                       <div className="dp-venue-title-row">
                         <div className="dp-venue-name">{v.name}</div>
                         <div className="dp-venue-meta">
-                          Capacity: <strong>{v.capacity}</strong>
+                          Capacity: <strong>{v.capacity || 60}</strong>
                           {v.floor ? ` • Floor: ${v.floor}` : ''}
                         </div>
                       </div>
@@ -546,49 +705,225 @@ export const LiveAcademicStatusModal = ({
             </div>
           )}
 
-          {/* TAB 3: AVAILABLE ROOMS */}
+          {/* TAB 3: AVAILABLE VENUES (REDESIGNED PROFESSIONAL GRID) */}
           {activeTab === 'AVAILABLE_ROOMS' && (
             <div>
-              {filteredAvailableVenues.length > 0 ? (
-                <div className="dp-venue-grid-display">
-                  {filteredAvailableVenues.map((v) => (
-                    <div
-                      key={v.venueId}
-                      className="dp-available-venue-card"
-                      onClick={() => {
-                        onClose();
-                        navigate(`/dean/room-search?room=${encodeURIComponent(v.identifier)}`);
-                      }}
-                      title="Click to view venue schedule"
+              {/* SEARCH & FILTERS SECTION */}
+              <div className="dp-live-filter-toolbar">
+                {/* Full-width Search Bar */}
+                <div className="dp-live-search-box">
+                  <Search size={16} className="dp-live-search-icon" />
+                  <input
+                    type="text"
+                    placeholder="Search by venue name, room number, or venue type..."
+                    value={searchFilter}
+                    onChange={(e) => setSearchFilter(e.target.value)}
+                    className="dp-live-search-input"
+                    id="venue-search-input"
+                  />
+                  {searchFilter && (
+                    <button
+                      type="button"
+                      className="dp-search-clear-btn"
+                      onClick={() => setSearchFilter('')}
+                      aria-label="Clear search"
                     >
-                      <div className="dp-avail-card-top">
-                        <span className="dp-room-identifier-badge">{v.identifier}</span>
-                        <span className="dp-status-badge available">AVAILABLE NOW</span>
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {/* Filter Control Rows */}
+                <div className="dp-venue-filter-controls-row">
+                  {/* Venue Type Pills */}
+                  <div className="dp-live-pill-group">
+                    <span className="dp-filter-group-label">Type:</span>
+                    <button
+                      type="button"
+                      className={`dp-pill-filter-btn ${venueTypeFilter === 'ALL' ? 'active' : ''}`}
+                      onClick={() => setVenueTypeFilter('ALL')}
+                    >
+                      All Venues ({venueTypeCounts.all})
+                    </button>
+                    <button
+                      type="button"
+                      className={`dp-pill-filter-btn ${venueTypeFilter === 'Classroom' ? 'active' : ''}`}
+                      onClick={() => setVenueTypeFilter('Classroom')}
+                    >
+                      Classrooms ({venueTypeCounts.classroom})
+                    </button>
+                    <button
+                      type="button"
+                      className={`dp-pill-filter-btn ${venueTypeFilter === 'Lab' ? 'active' : ''}`}
+                      onClick={() => setVenueTypeFilter('Lab')}
+                    >
+                      Laboratories ({venueTypeCounts.lab})
+                    </button>
+                    <button
+                      type="button"
+                      className={`dp-pill-filter-btn ${venueTypeFilter === 'Auditorium' ? 'active' : ''}`}
+                      onClick={() => setVenueTypeFilter('Auditorium')}
+                    >
+                      Auditoriums ({venueTypeCounts.auditorium})
+                    </button>
+                  </div>
+
+                  {/* Availability Status Toggle Pills */}
+                  <div className="dp-live-pill-group">
+                    <span className="dp-filter-group-label">Status:</span>
+                    <button
+                      type="button"
+                      className={`dp-pill-filter-btn ${venueAvailabilityFilter === 'ALL' ? 'active' : ''}`}
+                      onClick={() => setVenueAvailabilityFilter('ALL')}
+                    >
+                      All ({venueStatusCounts.all})
+                    </button>
+                    <button
+                      type="button"
+                      className={`dp-pill-filter-btn available ${venueAvailabilityFilter === 'AVAILABLE_NOW' ? 'active' : ''}`}
+                      onClick={() => setVenueAvailabilityFilter('AVAILABLE_NOW')}
+                    >
+                      Available Now ({venueStatusCounts.available})
+                    </button>
+                    <button
+                      type="button"
+                      className={`dp-pill-filter-btn occupied ${venueAvailabilityFilter === 'OCCUPIED' ? 'active' : ''}`}
+                      onClick={() => setVenueAvailabilityFilter('OCCUPIED')}
+                    >
+                      Occupied ({venueStatusCounts.occupied})
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* RESPONSIVE VENUE CARD GRID */}
+              {filteredVenues.length > 0 ? (
+                <div className="dp-venue-card-grid">
+                  {filteredVenues.map((v) => {
+                    const isOccupied = v.isOccupied;
+
+                    return (
+                      <div
+                        key={v.venueId || v.identifier}
+                        className={`dp-venue-card ${isOccupied ? 'is-occupied' : 'is-available'}`}
+                        onClick={() => {
+                          onClose();
+                          navigate(`/dean/room-search?room=${encodeURIComponent(v.identifier)}`);
+                        }}
+                        title={`Click to view timetable for ${v.name || v.identifier}`}
+                      >
+                        {/* Top Row: Identifier, Type Tag, Status Badge */}
+                        <div className="dp-venue-card-header">
+                          <div className="dp-venue-header-left">
+                            <span className="dp-room-identifier-badge">{v.identifier}</span>
+                            <span className="dp-room-type-tag">{v.venueType}</span>
+                          </div>
+                          <span
+                            className={`dp-status-badge ${isOccupied ? 'occupied' : 'available'}`}
+                          >
+                            {isOccupied ? 'OCCUPIED' : 'AVAILABLE NOW'}
+                          </span>
+                        </div>
+
+                        {/* Middle Section: Name & Capacity / Floor */}
+                        <div className="dp-venue-card-body">
+                          <div className="dp-venue-name">{v.name}</div>
+                          <div className="dp-venue-meta-pills">
+                            <span className="dp-venue-meta-pill">
+                              Capacity: <strong>{v.capacity || 60}</strong>
+                            </span>
+                            {v.floor && (
+                              <span className="dp-venue-meta-pill">
+                                Floor: <strong>{v.floor}</strong>
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Status Description / Current Class Info */}
+                          {isOccupied && v.runningClass ? (
+                            <div className="dp-venue-occupied-info">
+                              <div className="dp-occupied-status-line">
+                                <Activity size={13} className="dp-occupied-icon" />
+                                <span className="dp-occupied-desc-text">
+                                  {v.statusDescription}
+                                </span>
+                              </div>
+                              <div className="dp-occupied-class-details">
+                                <div className="dp-occupied-subject-line">
+                                  <strong>{v.runningClass.subject}</strong>
+                                  {v.runningClass.subjectCode && (
+                                    <span className="dp-subject-code-tag">
+                                      {v.runningClass.subjectCode}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="dp-occupied-sub-meta">
+                                  <span>
+                                    Faculty: <strong>{formatAcademicFaculty(v.runningClass.faculty)}</strong>
+                                  </span>
+                                  <span>
+                                    Section: <strong>{v.runningClass.section}</strong>
+                                    {v.runningClass.semester ? ` (${v.runningClass.semester})` : ''}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="dp-venue-available-info">
+                              <div className="dp-available-status-line">
+                                <CheckCircle2 size={14} className="dp-avail-check-icon" />
+                                <span className="dp-avail-desc-text">
+                                  {v.statusDescription || 'Free at current time'}
+                                </span>
+                              </div>
+                              <p className="dp-avail-sub-text">
+                                No active class scheduled in this venue for the current period interval.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Bottom Row: Consistent Details Action */}
+                        <div className="dp-venue-card-footer">
+                          <button
+                            type="button"
+                            className="dp-venue-action-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onClose();
+                              navigate(`/dean/room-search?room=${encodeURIComponent(v.identifier)}`);
+                            }}
+                          >
+                            <span>View Timetable</span>
+                            <ChevronRight size={14} />
+                          </button>
+                        </div>
                       </div>
-                      <div className="dp-avail-venue-name">{v.name}</div>
-                      <div className="dp-avail-venue-meta">
-                        <span>Type: <strong>{v.venueType}</strong></span>
-                        <span>Capacity: <strong>{v.capacity}</strong></span>
-                        {v.floor && <span>Floor: <strong>{v.floor}</strong></span>}
-                      </div>
-                      <div className="dp-avail-card-footer">
-                        <span>Free at current time</span>
-                        <ChevronRight size={14} />
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="dp-empty-live-box">
-                  <div className="dp-empty-live-icon-wrap red">
-                    <DoorOpen size={36} className="dp-empty-live-icon red" />
+                  <div className="dp-empty-live-icon-wrap">
+                    <DoorOpen size={36} className="dp-empty-live-icon" />
                   </div>
                   <div className="dp-empty-live-text-wrap">
-                    <div className="dp-empty-live-heading">No Free Venues Match Filter</div>
+                    <div className="dp-empty-live-heading">No Venues Match Selected Filter</div>
                     <div className="dp-empty-live-description">
-                      All matching classrooms, labs, and auditoriums are currently occupied by classes.
+                      No classrooms, laboratories, or auditoriums matched your search query and filter criteria.
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    className="dp-btn dp-btn-secondary dp-btn-sm"
+                    onClick={() => {
+                      setSearchFilter('');
+                      setVenueTypeFilter('ALL');
+                      setVenueAvailabilityFilter('ALL');
+                    }}
+                  >
+                    Reset Filters
+                  </button>
                 </div>
               )}
             </div>
@@ -597,9 +932,32 @@ export const LiveAcademicStatusModal = ({
           {/* TAB 4: FACULTY TEACHING NOW */}
           {activeTab === 'TEACHING_FACULTY' && (
             <div>
-              {teachingFaculty.length > 0 ? (
+              <div className="dp-live-filter-toolbar">
+                <div className="dp-live-search-box">
+                  <Search size={16} className="dp-live-search-icon" />
+                  <input
+                    type="text"
+                    placeholder="Filter teaching faculty by name, employee ID, or subject..."
+                    value={searchFilter}
+                    onChange={(e) => setSearchFilter(e.target.value)}
+                    className="dp-live-search-input"
+                  />
+                  {searchFilter && (
+                    <button
+                      type="button"
+                      className="dp-search-clear-btn"
+                      onClick={() => setSearchFilter('')}
+                      aria-label="Clear search"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {filteredTeachingFaculty.length > 0 ? (
                 <div className="dp-live-cards-list">
-                  {teachingFaculty.map((item) => (
+                  {filteredTeachingFaculty.map((item) => (
                     <div
                       key={item.facultyId}
                       className={`dp-live-item-card ${item.hasConflict ? 'conflict-border' : ''}`}
@@ -623,6 +981,7 @@ export const LiveAcademicStatusModal = ({
                         <div className="dp-faculty-name-main">{item.fullName}</div>
                         <div className="dp-faculty-meta-sub">
                           {item.designation} • {item.department}
+                          {item.officialEmail ? ` • ${item.officialEmail}` : ''}
                         </div>
                       </div>
 
@@ -677,11 +1036,79 @@ export const LiveAcademicStatusModal = ({
             </div>
           )}
 
-          {/* TAB 5: FACULTY DIRECTORY & AVAILABILITY (4 Categories) */}
+          {/* TAB 5: FACULTY DIRECTORY & AVAILABILITY (REDESIGNED PROFESSIONAL GRID) */}
           {activeTab === 'AVAILABLE_FACULTY' && (
             <div>
+              {/* SEARCH & FILTERS SECTION */}
+              <div className="dp-live-filter-toolbar">
+                {/* Full-width Search Bar */}
+                <div className="dp-live-search-box">
+                  <Search size={16} className="dp-live-search-icon" />
+                  <input
+                    type="text"
+                    placeholder="Search by faculty name, faculty ID, or subject name / code..."
+                    value={searchFilter}
+                    onChange={(e) => setSearchFilter(e.target.value)}
+                    className="dp-live-search-input"
+                    id="faculty-search-input"
+                  />
+                  {searchFilter && (
+                    <button
+                      type="button"
+                      className="dp-search-clear-btn"
+                      onClick={() => setSearchFilter('')}
+                      aria-label="Clear search"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {/* Status Filter Pills with Synchronized Result Counts */}
+                <div className="dp-live-pill-group">
+                  <button
+                    type="button"
+                    className={`dp-pill-filter-btn ${facultyCategoryFilter === 'ALL' ? 'active' : ''}`}
+                    onClick={() => setFacultyCategoryFilter('ALL')}
+                  >
+                    All Faculty ({facultyCounts.all})
+                  </button>
+                  <button
+                    type="button"
+                    className={`dp-pill-filter-btn available ${facultyCategoryFilter === 'AVAILABLE_NOW' ? 'active' : ''}`}
+                    onClick={() => setFacultyCategoryFilter('AVAILABLE_NOW')}
+                  >
+                    Available Now ({facultyCounts.available})
+                  </button>
+                  <button
+                    type="button"
+                    className={`dp-pill-filter-btn teaching ${facultyCategoryFilter === 'TEACHING_NOW' ? 'active' : ''}`}
+                    onClick={() => setFacultyCategoryFilter('TEACHING_NOW')}
+                  >
+                    Teaching Now ({facultyCounts.teaching})
+                  </button>
+                  <button
+                    type="button"
+                    className={`dp-pill-filter-btn not-scheduled ${facultyCategoryFilter === 'NOT_SCHEDULED_TODAY' ? 'active' : ''}`}
+                    onClick={() => setFacultyCategoryFilter('NOT_SCHEDULED_TODAY')}
+                  >
+                    Not Scheduled Today ({facultyCounts.notScheduled})
+                  </button>
+                  {facultyCounts.unknown > 0 && (
+                    <button
+                      type="button"
+                      className={`dp-pill-filter-btn unknown ${facultyCategoryFilter === 'STATUS_UNKNOWN' ? 'active' : ''}`}
+                      onClick={() => setFacultyCategoryFilter('STATUS_UNKNOWN')}
+                    >
+                      Status Unknown ({facultyCounts.unknown})
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* RESPONSIVE FACULTY CARD GRID */}
               {filteredFaculty.length > 0 ? (
-                <div className="dp-live-cards-list">
+                <div className="dp-faculty-card-grid">
                   {filteredFaculty.map((item) => {
                     const isAvailableNow = item.category === 'AVAILABLE_NOW';
                     const isTeachingNow = item.category === 'TEACHING_NOW';
@@ -691,81 +1118,146 @@ export const LiveAcademicStatusModal = ({
                     return (
                       <div
                         key={item.facultyId}
-                        className="dp-live-item-card"
+                        className="dp-faculty-card"
                         onClick={() => {
                           onClose();
                           navigate(`/dean/faculty/${item.facultyId}`);
                         }}
-                        title="Click to view faculty details"
+                        title={`Click to view profile and full timetable for ${item.fullName}`}
                       >
-                        <div className="dp-live-item-top">
-                          <div className="dp-live-badges-left">
+                        {/* Header: Faculty Name, Employee ID & Current Status Badge */}
+                        <div className="dp-faculty-card-top">
+                          <div className="dp-faculty-identity">
+                            <div className="dp-faculty-name-main">{item.fullName}</div>
                             <span className="dp-faculty-id-pill">{item.employeeId}</span>
-                            <span
-                              className={`dp-status-badge ${
-                                isAvailableNow
-                                  ? 'available'
-                                  : isTeachingNow
-                                  ? 'teaching'
-                                  : isNotScheduled
-                                  ? 'not-scheduled'
-                                  : 'unknown'
-                              }`}
-                            >
-                              {item.statusLabel}
-                            </span>
                           </div>
-                          <span className="dp-click-action-hint">
-                            View Profile →
+                          <span
+                            className={`dp-status-badge ${
+                              isAvailableNow
+                                ? 'available'
+                                : isTeachingNow
+                                ? 'teaching'
+                                : isNotScheduled
+                                ? 'not-scheduled'
+                                : 'unknown'
+                            }`}
+                          >
+                            {item.statusLabel}
                           </span>
                         </div>
 
-                        <div className="dp-faculty-card-header">
-                          <div className="dp-faculty-name-main">{item.fullName}</div>
-                          <div className="dp-faculty-meta-sub">
+                        {/* Designation, Department & Email */}
+                        <div className="dp-faculty-meta-row">
+                          <span className="dp-faculty-dept-text">
                             {item.designation} • {item.department}
-                            {item.officialEmail ? ` • ${item.officialEmail}` : ''}
-                          </div>
+                          </span>
+                          {item.officialEmail && (
+                            <span className="dp-faculty-email-text" title={item.officialEmail}>
+                              <Mail size={12} className="dp-faculty-email-icon" />
+                              {item.officialEmail}
+                            </span>
+                          )}
                         </div>
 
-                        {/* Category Details */}
-                        {isAvailableNow && (
-                          <div className="dp-faculty-status-note available">
-                            <CheckCircle2 size={15} />
-                            <span>
-                              {item.statusNote || 'Available now (has scheduled classes today, currently free)'}
-                            </span>
-                          </div>
-                        )}
+                        {/* Distinct Active Assignment / Status Section */}
+                        <div className="dp-faculty-card-body-section">
+                          {/* 1. TEACHING NOW: Distinct readable assignment box */}
+                          {isTeachingNow && item.currentClass && (
+                            <div className="dp-faculty-teaching-box">
+                              <div className="dp-teaching-box-header">
+                                <Activity size={14} className="dp-teaching-icon" />
+                                <span className="dp-teaching-box-title">Active Teaching Assignment</span>
+                                <span className="dp-period-badge sm">{item.currentClass.period}</span>
+                                <span className="dp-time-text sm">
+                                  {formatTimeRange12h(item.currentClass.time)}
+                                </span>
+                              </div>
 
-                        {isTeachingNow && item.currentClass && (
-                          <div className="dp-venue-running-box teaching">
-                            <div className="dp-running-box-header">
-                              <Activity size={14} style={{ color: 'var(--dp-warning)' }} />
-                              <span>Teaching: <strong>{item.currentClass.subject}</strong></span>
-                              <span className="dp-period-badge sm">{item.currentClass.period}</span>
-                              <span className="dp-time-text sm">{item.currentClass.time}</span>
+                              <div className="dp-teaching-box-subject-row">
+                                <span className="dp-teaching-subject-name">
+                                  {item.currentClass.subject}
+                                </span>
+                                {item.currentClass.subjectCode && (
+                                  <span className="dp-subject-code-tag">
+                                    {item.currentClass.subjectCode}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="dp-teaching-meta-grid">
+                                <div className="dp-teaching-meta-item">
+                                  <span className="dp-meta-lbl">Venue</span>
+                                  <span className="dp-meta-val">
+                                    {item.currentClass.room}
+                                    {item.currentClass.roomType && ` (${item.currentClass.roomType})`}
+                                  </span>
+                                </div>
+                                <div className="dp-teaching-meta-item">
+                                  <span className="dp-meta-lbl">Section & Semester</span>
+                                  <span className="dp-meta-val">
+                                    {item.currentClass.section}
+                                    {item.currentClass.semester ? ` (${item.currentClass.semester})` : ''}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
-                            <div className="dp-running-details">
-                              <div>Room: <strong>{item.currentClass.room}</strong></div>
-                              <div>Section: <strong>{item.currentClass.section}</strong></div>
+                          )}
+
+                          {/* 2. AVAILABLE NOW */}
+                          {isAvailableNow && (
+                            <div className="dp-faculty-status-box available">
+                              <div className="dp-faculty-box-header">
+                                <CheckCircle2 size={15} style={{ color: '#059669' }} />
+                                <span className="dp-faculty-box-title">Free at current time</span>
+                              </div>
+                              <p className="dp-faculty-box-desc">
+                                {item.statusNote || 'Scheduled for classes today; currently free between academic periods.'}
+                              </p>
                             </div>
-                          </div>
-                        )}
+                          )}
 
-                        {isNotScheduled && (
-                          <div className="dp-faculty-status-note not-scheduled">
-                            <Calendar size={15} />
-                            <span>No classes scheduled on this day.</span>
-                          </div>
-                        )}
+                          {/* 3. NOT SCHEDULED TODAY */}
+                          {isNotScheduled && (
+                            <div className="dp-faculty-status-box not-scheduled">
+                              <div className="dp-faculty-box-header">
+                                <Calendar size={15} style={{ color: '#2563EB' }} />
+                                <span className="dp-faculty-box-title">No classes scheduled today</span>
+                              </div>
+                              <p className="dp-faculty-box-desc">
+                                No teaching assignments or lecture duties scheduled for this faculty member on this day.
+                              </p>
+                            </div>
+                          )}
 
-                        {isUnknown && (
-                          <div className="dp-faculty-status-note unknown">
-                            <HelpCircle size={15} />
-                            <span>Status Unknown: {item.reason || 'Missing or invalid data'}</span>
-                          </div>
-                        )}
+                          {/* 4. STATUS UNKNOWN / UNAVAILABLE DATA */}
+                          {isUnknown && (
+                            <div className="dp-faculty-status-box unknown">
+                              <div className="dp-faculty-box-header">
+                                <HelpCircle size={15} style={{ color: '#64748B' }} />
+                                <span className="dp-faculty-box-title">Status Unknown</span>
+                              </div>
+                              <p className="dp-faculty-box-desc">
+                                {item.reason || 'Faculty account inactive, on official leave, or profile data incomplete.'}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Card Action Footer: View Profile */}
+                        <div className="dp-faculty-card-footer">
+                          <button
+                            type="button"
+                            className="dp-faculty-action-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onClose();
+                              navigate(`/dean/faculty/${item.facultyId}`);
+                            }}
+                          >
+                            <span>View Profile</span>
+                            <ChevronRight size={14} />
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -778,9 +1270,19 @@ export const LiveAcademicStatusModal = ({
                   <div className="dp-empty-live-text-wrap">
                     <div className="dp-empty-live-heading">No Faculty Match Selected Filter</div>
                     <div className="dp-empty-live-description">
-                      Try selecting a different filter pill or clearing the search query.
+                      Try clearing the search query or selecting a different status filter pill.
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    className="dp-btn dp-btn-secondary dp-btn-sm"
+                    onClick={() => {
+                      setSearchFilter('');
+                      setFacultyCategoryFilter('ALL');
+                    }}
+                  >
+                    Reset Filters
+                  </button>
                 </div>
               )}
             </div>
