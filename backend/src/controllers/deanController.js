@@ -14,6 +14,7 @@ const { successResponse, errorResponse } = require('../utils/response');
 const { academicEvents, ACADEMIC_EVENTS } = require('../utils/eventEmitter');
 const { DAYS_OF_WEEK, format12HourTime, formatAcademicDate, getPeriodStatus, findPeriodForTime, getCurrentAcademicStatus } = require('../utils/timeHelper');
 const { sortTimetableEntries, sortPeriodsChronologically } = require('../utils/timetableSort');
+const { calculateLiveAcademicStatus } = require('../services/liveAcademicStatusService');
 
 /**
  * DEAN DASHBOARD
@@ -22,8 +23,16 @@ const { sortTimetableEntries, sortPeriodsChronologically } = require('../utils/t
 const getDeanDashboard = async (req, res, next) => {
   try {
     const now = new Date();
-    const todayDay = DAYS_OF_WEEK[now.getDay()];
-    const todayDateStr = now.toISOString().split('T')[0];
+    const { time, day } = req.query;
+
+    // Single source of truth live academic status computation
+    const liveData = await calculateLiveAcademicStatus({
+      referenceDate: now,
+      timeOverride: time,
+      dayOverride: day
+    });
+
+    const todayDateStr = liveData.todayDateStr;
 
     // 1. Real MongoDB Summary Counts
     const [
@@ -36,7 +45,6 @@ const getDeanDashboard = async (req, res, next) => {
       totalLabs,
       totalAuditoriums,
       activeTimetableSessions,
-      todayClassesCount,
       pendingSubstitutionsCount,
       activeSubstitutionsCount,
       todaySubstitutionsCount,
@@ -51,93 +59,13 @@ const getDeanDashboard = async (req, res, next) => {
       Lab.countDocuments(),
       Auditorium.countDocuments(),
       TimetableEntry.countDocuments({ status: 'ACTIVE' }),
-      TimetableEntry.countDocuments({ day: todayDay, status: 'ACTIVE' }),
       Substitution.countDocuments({ status: 'PENDING' }),
       Substitution.countDocuments({ status: 'CONFIRMED' }),
       Substitution.countDocuments({ date: todayDateStr }),
       Substitution.countDocuments({ status: 'CANCELLED' })
     ]);
 
-    // 2. Fetch all active timetable entries for today's day
-    const todayEntries = await TimetableEntry.find({ day: todayDay, status: 'ACTIVE' })
-      .populate('period')
-      .populate('subject', 'name code type credits')
-      .populate('faculty', 'fullName facultyId officialEmail designation')
-      .populate('substituteFaculty', 'fullName facultyId officialEmail designation')
-      .populate('originalFaculty', 'fullName facultyId officialEmail designation')
-      .populate('section', 'name capacity')
-      .populate('semester', 'name academicYear')
-      .lean();
-
-    // Sort chronologically by configured period start time
-    const sortedTodayEntries = sortTimetableEntries(todayEntries);
-
-    // 3. Process each entry for Live status & 12-hour period representation
-    const currentlyActiveClasses = [];
-    const todaySchedule = sortedTodayEntries.map((entry) => {
-      const periodStatus = getPeriodStatus(entry.period, now);
-      const isLive = periodStatus.status === 'CURRENT';
-
-      const effectiveFaculty = entry.isSubstituted && entry.substituteFaculty
-        ? entry.substituteFaculty
-        : entry.faculty;
-
-      const scheduleItem = {
-        _id: entry._id,
-        period: entry.period?.periodNumber || 'P1',
-        time: `${entry.period?.startTime || ''} - ${entry.period?.endTime || ''}`,
-        periodOrder: entry.period?.order || 1,
-        subject: entry.subject?.name || 'Class',
-        subjectCode: entry.subject?.code || '',
-        faculty: effectiveFaculty?.fullName || 'Faculty',
-        facultyId: effectiveFaculty?.facultyId || '',
-        facultyEmail: effectiveFaculty?.officialEmail || '',
-        originalFaculty: entry.isSubstituted ? entry.originalFaculty?.fullName : null,
-        isSubstituted: !!entry.isSubstituted,
-        section: entry.section?.name || 'Section',
-        room: entry.roomDetails?.roomNumber || 'Room',
-        roomType: entry.roomType,
-        semester: entry.semester?.name || '',
-        status: isLive ? 'LIVE' : periodStatus.status, // LIVE, UPCOMING, COMPLETED
-        minutesRemaining: periodStatus.minutesRemaining,
-        minutesUntilStart: periodStatus.minutesUntilStart
-      };
-
-      if (isLive) {
-        currentlyActiveClasses.push(scheduleItem);
-      }
-
-      return scheduleItem;
-    });
-
-    // 4. Live Academic Overview & Room / Faculty Utilization Calculation
-    const totalRooms = totalClassrooms + totalLabs + totalAuditoriums;
-    const occupiedRoomsNow = new Set(currentlyActiveClasses.map(c => c.room)).size;
-    const freeRoomsNow = Math.max(0, totalRooms - occupiedRoomsNow);
-    const facultyInClassNow = new Set(currentlyActiveClasses.map(c => c.facultyId || c.faculty)).size;
-    const freeFacultyNow = Math.max(0, activeFaculty - facultyInClassNow);
-
-    // Scheduled occupancy for today
-    const occupiedRoomsToday = new Set(todaySchedule.map(c => c.room)).size;
-    const freeRoomsToday = Math.max(0, totalRooms - occupiedRoomsToday);
-    const facultyInClassToday = new Set(todaySchedule.map(c => c.facultyId || c.faculty)).size;
-    const freeFacultyToday = Math.max(0, activeFaculty - facultyInClassToday);
-
-    const liveOverviewStats = {
-      totalClasses: todaySchedule.length || todayClassesCount || activeTimetableSessions,
-      classesRunningNow: currentlyActiveClasses.length,
-      freeRooms: freeRoomsNow,
-      occupiedRooms: occupiedRoomsNow,
-      facultyInClass: facultyInClassNow,
-      freeFaculty: freeFacultyNow,
-      totalRooms,
-      scheduledOccupiedRoomsToday: occupiedRoomsToday,
-      scheduledFreeRoomsToday: freeRoomsToday,
-      scheduledFacultyToday: facultyInClassToday,
-      scheduledFreeFacultyToday: freeFacultyToday
-    };
-
-    // 5. Recent Substitutions Overview
+    // 2. Recent Substitutions Overview
     const recentSubstitutions = await Substitution.find()
       .populate('period')
       .populate('subject', 'name code')
@@ -151,7 +79,7 @@ const getDeanDashboard = async (req, res, next) => {
     return successResponse(
       res,
       {
-        liveStats: liveOverviewStats,
+        liveStats: liveData.liveStats,
         metrics: {
           totalFaculty,
           activeFaculty,
@@ -162,20 +90,27 @@ const getDeanDashboard = async (req, res, next) => {
           totalLabs,
           totalAuditoriums,
           activeTimetableSessions,
-          todayClassesCount: liveOverviewStats.totalClasses,
+          todayClassesCount: liveData.liveStats.totalClasses,
           pendingSubstitutionsCount,
           activeSubstitutionsCount,
           todaySubstitutionsCount,
           completedSubstitutionsCount
         },
         currentAcademicContext: {
-          todayDay,
-          formattedDate: formatAcademicDate(now).fullDisplay,
-          currentTime12: format12HourTime(now),
+          todayDay: liveData.todayDay,
+          formattedDate: liveData.academicDate.fullDisplay,
+          currentTime12: liveData.currentTime12,
+          currentPeriod: liveData.currentPeriod,
+          currentPeriodTiming: liveData.currentPeriodTiming,
           department: 'Computer Science Department'
         },
-        currentlyActiveClasses,
-        todaySchedule,
+        currentlyActiveClasses: liveData.liveClasses,
+        occupiedVenues: liveData.occupiedVenues,
+        availableVenues: liveData.availableVenues,
+        teachingFaculty: liveData.teachingFaculty,
+        availableFaculty: liveData.availableFaculty,
+        conflicts: liveData.conflicts,
+        todaySchedule: liveData.todaySchedule,
         recentSubstitutions
       },
       'Dean Dashboard overview retrieved successfully'
@@ -196,50 +131,95 @@ const getQuickSearchSuggestions = async (req, res, next) => {
       return successResponse(res, { suggestions: [] }, 'Empty query');
     }
     const term = q.trim();
-    const regex = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    const escapeRegex = (str) => str.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+    const makeFlexiblePattern = (str) => {
+      let pat = escapeRegex(str);
+      pat = pat.replace(/th/gi, 't[h]?');
+      pat = pat.replace(/ee/gi, '(?:ee|i|e)');
+      return pat;
+    };
 
-    const [classrooms, labs, faculties, subjects, sections] = await Promise.all([
-      Classroom.find({ roomNumber: regex }).limit(4).lean(),
-      Lab.find({ $or: [{ labNumber: regex }, { labName: regex }] }).limit(3).lean(),
-      Faculty.find({ $or: [{ fullName: regex }, { facultyId: regex }, { officialEmail: regex }] }).limit(4).lean(),
-      Subject.find({ $or: [{ name: regex }, { code: regex }] }).limit(4).lean(),
-      ClassSection.find({ name: regex }).limit(3).lean()
+    const regex = new RegExp(escapeRegex(term), 'i');
+    const flexibleRegex = new RegExp(makeFlexiblePattern(term), 'i');
+
+    const [classrooms, labs, auditoriums, faculties, subjects, sections] = await Promise.all([
+      Classroom.find({
+        $or: [{ roomNumber: regex }, { name: regex }]
+      }).limit(4).lean(),
+      Lab.find({
+        $or: [{ labNumber: regex }, { labName: regex }]
+      }).limit(4).lean(),
+      Auditorium.find({
+        $or: [{ auditoriumNumber: regex }, { auditoriumName: regex }]
+      }).limit(3).lean(),
+      Faculty.find({
+        $or: [{ fullName: flexibleRegex }, { facultyId: regex }, { officialEmail: regex }, { designation: regex }]
+      }).limit(4).lean(),
+      Subject.find({
+        $or: [{ name: regex }, { code: regex }]
+      }).limit(4).lean(),
+      ClassSection.find({
+        name: regex
+      }).populate('semester', 'name').limit(4).lean()
     ]);
 
     const suggestions = [];
 
-    // Rooms
+    // Classrooms
     classrooms.forEach(r => {
       suggestions.push({
-        type: 'ROOM',
+        type: 'Classroom',
         id: r._id,
         title: `Room ${r.roomNumber}`,
         subtitle: `${r.name || 'Classroom'} • Capacity: ${r.capacity || 60}`,
+        badge: `Cap: ${r.capacity || 60}`,
         url: `/dean/room-search?room=${encodeURIComponent(r.roomNumber)}`,
+        navigationUrl: `/dean/room-search?room=${encodeURIComponent(r.roomNumber)}`,
         entityId: r._id,
         category: 'CLASSROOMS'
       });
     });
+
+    // Labs
     labs.forEach(l => {
       suggestions.push({
-        type: 'ROOM',
+        type: 'Laboratory',
         id: l._id,
         title: `Lab ${l.labNumber}`,
         subtitle: `${l.labName} • Capacity: ${l.capacity || 40}`,
+        badge: `Cap: ${l.capacity || 40}`,
         url: `/dean/room-search?room=${encodeURIComponent(l.labNumber)}`,
+        navigationUrl: `/dean/room-search?room=${encodeURIComponent(l.labNumber)}`,
         entityId: l._id,
         category: 'LABS'
+      });
+    });
+
+    // Auditoriums
+    auditoriums.forEach(a => {
+      suggestions.push({
+        type: 'Auditorium',
+        id: a._id,
+        title: a.auditoriumName || `Auditorium ${a.auditoriumNumber}`,
+        subtitle: `${a.auditoriumNumber} • Capacity: ${a.capacity || 250}`,
+        badge: `Cap: ${a.capacity || 250}`,
+        url: `/dean/room-search?room=${encodeURIComponent(a.auditoriumNumber || a.auditoriumName)}`,
+        navigationUrl: `/dean/room-search?room=${encodeURIComponent(a.auditoriumNumber || a.auditoriumName)}`,
+        entityId: a._id,
+        category: 'AUDITORIUMS'
       });
     });
 
     // Faculty
     faculties.forEach(f => {
       suggestions.push({
-        type: 'FACULTY',
+        type: 'Faculty',
         id: f._id,
         title: f.fullName,
-        subtitle: `${f.designation} • ${f.facultyId || f.officialEmail}`,
-        url: `/dean/faculty-search?faculty=${encodeURIComponent(f.fullName)}`,
+        subtitle: `${f.designation || 'Faculty'} • ID: ${f.facultyId || f.officialEmail}`,
+        badge: f.facultyId ? `ID: ${f.facultyId}` : 'ACTIVE',
+        url: `/dean/faculty/${f._id}`,
+        navigationUrl: `/dean/faculty/${f._id}`,
         entityId: f._id,
         category: 'FACULTY'
       });
@@ -248,11 +228,13 @@ const getQuickSearchSuggestions = async (req, res, next) => {
     // Subjects
     subjects.forEach(s => {
       suggestions.push({
-        type: 'SUBJECT',
+        type: 'Subject',
         id: s._id,
         title: s.name,
-        subtitle: `Code: ${s.code} • ${s.type}`,
-        url: `/dean/timetable?subject=${encodeURIComponent(s.name)}`,
+        subtitle: `Code: ${s.code} • ${s.type || 'Theory'}`,
+        badge: s.code,
+        url: `/dean/subjects?id=${s._id}`,
+        navigationUrl: `/dean/subjects?id=${s._id}`,
         entityId: s._id,
         category: 'SUBJECTS'
       });
@@ -261,11 +243,13 @@ const getQuickSearchSuggestions = async (req, res, next) => {
     // Sections
     sections.forEach(sec => {
       suggestions.push({
-        type: 'CLASS',
+        type: 'Class Section',
         id: sec._id,
         title: sec.name,
-        subtitle: `Class Section • Capacity: ${sec.capacity || 60}`,
-        url: `/dean/class-search?class=${encodeURIComponent(sec.name)}`,
+        subtitle: `Semester: ${sec.semester?.name || 'N/A'} • Capacity: ${sec.capacity || 60}`,
+        badge: sec.status || 'ACTIVE',
+        url: `/dean/class-search?section=${sec._id}`,
+        navigationUrl: `/dean/class-search?section=${sec._id}`,
         entityId: sec._id,
         category: 'SECTIONS'
       });
@@ -285,17 +269,131 @@ const getClassWiseSearch = async (req, res, next) => {
   try {
     const now = new Date();
     const todayDay = DAYS_OF_WEEK[now.getDay()];
-    let { room, day, time, class: className } = req.query;
+    let { room, day, time, class: className, sectionId, section } = req.query;
 
-    if (!day || !day.trim()) day = todayDay;
-    if (!time || !time.trim()) time = '10:00 AM';
+    const rawPeriods = await Period.find({ status: 'ACTIVE' }).lean();
+    const periods = sortPeriodsChronologically(rawPeriods);
+    const matchedPeriod = (time && time.trim() && time !== 'ALL') ? findPeriodForTime(time, periods) : null;
 
-    const periods = await Period.find({ status: 'ACTIVE' }).sort({ order: 1 }).lean();
-    const matchedPeriod = findPeriodForTime(time, periods) || periods[0];
+    // Check if searching by Class Section
+    const targetSectionQuery = sectionId || section || className;
+    if (targetSectionQuery && targetSectionQuery.trim()) {
+      const trimmedQuery = targetSectionQuery.trim();
+      let sectionDoc = null;
 
-    // Find the room
+      if (mongoose.Types.ObjectId.isValid(trimmedQuery)) {
+        sectionDoc = await ClassSection.findById(trimmedQuery).populate('semester', 'name academicYear').lean();
+      }
+
+      if (!sectionDoc && section && mongoose.Types.ObjectId.isValid(section.trim())) {
+        sectionDoc = await ClassSection.findById(section.trim()).populate('semester', 'name academicYear').lean();
+      }
+
+      if (!sectionDoc) {
+        const secRegex = new RegExp(trimmedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        sectionDoc = await ClassSection.findOne({ name: secRegex }).populate('semester', 'name academicYear').lean();
+      }
+
+      if (sectionDoc) {
+        const query = { section: sectionDoc._id, status: 'ACTIVE' };
+        if (day && day.trim() && day !== 'ALL' && DAYS_OF_WEEK.includes(day.trim())) {
+          query.day = day.trim();
+        }
+
+        const entries = await TimetableEntry.find(query)
+          .populate('period')
+          .populate('subject', 'name code credits type')
+          .populate('faculty', 'fullName facultyId officialEmail designation')
+          .populate('substituteFaculty', 'fullName facultyId officialEmail designation')
+          .populate('section', 'name capacity')
+          .populate('semester', 'name academicYear')
+          .lean();
+
+        const sortedEntries = sortTimetableEntries(entries);
+
+        const formattedTimetable = sortedEntries.map((e) => {
+          const periodStatus = getPeriodStatus(e.period, now);
+          const isLive = periodStatus.status === 'CURRENT' && e.day === todayDay;
+          const effectiveFaculty = e.isSubstituted && e.substituteFaculty
+            ? e.substituteFaculty
+            : e.faculty;
+
+          return {
+            _id: e._id,
+            day: e.day,
+            period: e.period?.periodNumber || 'P1',
+            periodOrder: e.period?.order || 1,
+            time: `${e.period?.startTime || ''} - ${e.period?.endTime || ''}`,
+            startTime: e.period?.startTime || '',
+            endTime: e.period?.endTime || '',
+            subject: e.subject?.name || 'Subject',
+            subjectCode: e.subject?.code || '',
+            subjectType: e.subject?.type || '',
+            credits: e.subject?.credits || 0,
+            faculty: effectiveFaculty?.fullName || 'Faculty',
+            facultyId: effectiveFaculty?.facultyId || '',
+            facultyEmail: effectiveFaculty?.officialEmail || '',
+            facultyDesignation: effectiveFaculty?.designation || '',
+            originalFaculty: e.isSubstituted ? e.originalFaculty?.fullName : null,
+            room: e.roomDetails?.roomNumber || 'Room',
+            roomId: e.roomId,
+            roomType: e.roomType || 'Classroom',
+            isSubstituted: !!e.isSubstituted,
+            substituteFaculty: e.isSubstituted ? e.substituteFaculty?.fullName : null,
+            status: isLive ? 'LIVE' : periodStatus.status,
+            isCombinedClass: !!e.isCombinedClass
+          };
+        });
+
+        let matchedSession = null;
+        let filteredTimetable = formattedTimetable;
+
+        if (matchedPeriod) {
+          matchedSession = formattedTimetable.find(
+            (t) => t.period === matchedPeriod.periodNumber && (!day || day === 'ALL' || t.day === day)
+          ) || null;
+          filteredTimetable = formattedTimetable.filter((t) => t.period === matchedPeriod.periodNumber);
+        }
+
+        return successResponse(res, {
+          isOccupied: formattedTimetable.length > 0,
+          status: formattedTimetable.length > 0 ? 'OCCUPIED' : 'FREE',
+          section: {
+            _id: sectionDoc._id,
+            name: sectionDoc.name,
+            semester: sectionDoc.semester ? {
+              _id: sectionDoc.semester._id,
+              name: sectionDoc.semester.name,
+              academicYear: sectionDoc.semester.academicYear
+            } : null,
+            capacity: sectionDoc.capacity || 60
+          },
+          className: sectionDoc.name,
+          day: day || 'All Days',
+          time: time || 'All Periods',
+          timetable: filteredTimetable,
+          allDayTimetable: formattedTimetable,
+          matchedSession,
+          totalSessions: formattedTimetable.length,
+          // Legacy properties for backward compatibility
+          ...(matchedSession ? {
+            roomNumber: matchedSession.room,
+            subject: matchedSession.subject,
+            subjectCode: matchedSession.subjectCode,
+            faculty: matchedSession.faculty,
+            period: matchedSession.period
+          } : {})
+        }, 'Class-wise timetable retrieved');
+      }
+    }
+
+    // Fallback: Legacy Room Search mode (Preserving backward compatibility for tests)
     let roomDoc = null;
     let roomType = 'Classroom';
+    const fallbackDay = (!day || !day.trim() || day === 'ALL') ? todayDay : day.trim();
+    const fallbackTime = (!time || !time.trim() || time === 'ALL') ? '10:00 AM' : time.trim();
+    const fallbackMatchedPeriod = findPeriodForTime(fallbackTime, periods) || periods[0];
+
     if (room && room.trim()) {
       const roomRegex = new RegExp(room.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
       roomDoc = await Classroom.findOne({ roomNumber: roomRegex }).lean();
@@ -309,21 +407,16 @@ const getClassWiseSearch = async (req, res, next) => {
       }
     }
 
-    if (!roomDoc && !className) {
+    if (!roomDoc) {
       roomDoc = await Classroom.findOne({ roomNumber: 'B314' }).lean() || await Classroom.findOne().lean();
     }
 
-    const query = { day, status: 'ACTIVE' };
-    if (matchedPeriod) {
-      query.period = matchedPeriod._id;
+    const query = { day: fallbackDay, status: 'ACTIVE' };
+    if (fallbackMatchedPeriod) {
+      query.period = fallbackMatchedPeriod._id;
     }
     if (roomDoc) {
       query.roomId = roomDoc._id;
-    }
-    if (className && className.trim()) {
-      const secRegex = new RegExp(className.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      const sec = await ClassSection.findOne({ name: secRegex }).lean();
-      if (sec) query.section = sec._id;
     }
 
     const entry = await TimetableEntry.findOne(query)
@@ -348,8 +441,8 @@ const getClassWiseSearch = async (req, res, next) => {
         roomName: roomDoc?.name || roomDoc?.labName || roomDoc?.auditoriumName || roomNumber,
         roomType: entry.roomType || roomType,
         capacity: roomDoc?.capacity || 60,
-        day,
-        period: entry.period?.periodNumber || matchedPeriod?.periodNumber || 'P1',
+        day: fallbackDay,
+        period: entry.period?.periodNumber || fallbackMatchedPeriod?.periodNumber || 'P1',
         time: `${entry.period?.startTime || ''} - ${entry.period?.endTime || ''}`,
         className: entry.section?.name || 'Class',
         subject: entry.subject?.name || 'Subject',
@@ -369,9 +462,9 @@ const getClassWiseSearch = async (req, res, next) => {
         roomName: roomDoc?.name || roomDoc?.labName || roomDoc?.auditoriumName || roomNumber,
         roomType,
         capacity: roomDoc?.capacity || 60,
-        day,
-        period: matchedPeriod?.periodNumber || 'P1',
-        time: matchedPeriod ? `${matchedPeriod.startTime} - ${matchedPeriod.endTime}` : time,
+        day: fallbackDay,
+        period: fallbackMatchedPeriod?.periodNumber || 'P1',
+        time: fallbackMatchedPeriod ? `${fallbackMatchedPeriod.startTime} - ${fallbackMatchedPeriod.endTime}` : fallbackTime,
         className: null,
         subject: null,
         faculty: null,
@@ -391,13 +484,34 @@ const getRoomWiseSearch = async (req, res, next) => {
   try {
     const now = new Date();
     const todayDay = DAYS_OF_WEEK[now.getDay()];
-    let { room, day } = req.query;
+    let { room, day, roomId } = req.query;
 
     if (!day || !day.trim()) day = todayDay;
 
     let roomDoc = null;
     let roomType = 'Classroom';
-    if (room && room.trim()) {
+
+    // 1. Check by ID if valid ObjectId
+    const targetRoomId = (roomId && mongoose.Types.ObjectId.isValid(roomId.trim()))
+      ? roomId.trim()
+      : (room && mongoose.Types.ObjectId.isValid(room.trim()))
+        ? room.trim()
+        : null;
+
+    if (targetRoomId) {
+      roomDoc = await Classroom.findById(targetRoomId).lean();
+      if (!roomDoc) {
+        roomDoc = await Lab.findById(targetRoomId).lean();
+        if (roomDoc) roomType = 'Lab';
+      }
+      if (!roomDoc) {
+        roomDoc = await Auditorium.findById(targetRoomId).lean();
+        if (roomDoc) roomType = 'Auditorium';
+      }
+    }
+
+    // 2. Check by room name / roomNumber regex
+    if (!roomDoc && room && room.trim()) {
       const roomRegex = new RegExp(room.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
       roomDoc = await Classroom.findOne({ roomNumber: roomRegex }).lean();
       if (!roomDoc) {
@@ -405,7 +519,7 @@ const getRoomWiseSearch = async (req, res, next) => {
         if (roomDoc) roomType = 'Lab';
       }
       if (!roomDoc) {
-        roomDoc = await Auditorium.findOne({ $or: [{ auditoriumNumber: roomRegex }, { auditoriumName: roomRegex }] }).lean();
+        roomDoc = await Auditorium.findOne({ $or: [{ auditoriumNumber: roomRegex }, { auditoriumName: roomRegex }, { name: roomRegex }] }).lean();
         if (roomDoc) roomType = 'Auditorium';
       }
     }
@@ -507,15 +621,23 @@ const getFacultyWiseSearch = async (req, res, next) => {
 
     let facultyDoc = null;
     if (facultyQuery && facultyQuery.trim()) {
-      const regex = new RegExp(facultyQuery.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      facultyDoc = await Faculty.findOne({
-        $or: [{ fullName: regex }, { facultyId: regex }, { officialEmail: regex }]
-      }).populate('assignedSubjects', 'name code').populate('assignedSections', 'name').lean();
+      const trimmedQuery = facultyQuery.trim();
+      const orConditions = [];
+      if (mongoose.Types.ObjectId.isValid(trimmedQuery)) {
+        orConditions.push({ _id: trimmedQuery });
+      }
+      const regex = new RegExp(trimmedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      orConditions.push({ fullName: regex }, { facultyId: regex }, { officialEmail: regex });
+
+      facultyDoc = await Faculty.findOne({ $or: orConditions })
+        .populate('assignedSubjects', 'name code credits type')
+        .populate('assignedSections', 'name')
+        .lean();
     }
 
     if (!facultyDoc) {
-      facultyDoc = await Faculty.findOne({ fullName: /Ravi/i }).populate('assignedSubjects', 'name code').populate('assignedSections', 'name').lean()
-        || await Faculty.findOne().populate('assignedSubjects', 'name code').populate('assignedSections', 'name').lean();
+      facultyDoc = await Faculty.findOne({ fullName: /Ravi/i }).populate('assignedSubjects', 'name code credits type').populate('assignedSections', 'name').lean()
+        || await Faculty.findOne().populate('assignedSubjects', 'name code credits type').populate('assignedSections', 'name').lean();
     }
 
     // Determine current live status for this faculty right now
@@ -629,6 +751,136 @@ const getFacultyWiseSearch = async (req, res, next) => {
 };
 
 /**
+ * DEDICATED LIVE ACADEMIC STATUS ENDPOINTS
+ * GET /api/v1/dean/live-status
+ */
+const getLiveStatus = async (req, res, next) => {
+  try {
+    const { time, day } = req.query;
+    const statusData = await calculateLiveAcademicStatus({
+      referenceDate: new Date(),
+      timeOverride: time,
+      dayOverride: day
+    });
+    return successResponse(res, statusData, 'Live academic status retrieved');
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET LIVE CLASSES
+ * GET /api/v1/dean/live-classes
+ */
+const getLiveClasses = async (req, res, next) => {
+  try {
+    const { time, day } = req.query;
+    const statusData = await calculateLiveAcademicStatus({
+      referenceDate: new Date(),
+      timeOverride: time,
+      dayOverride: day
+    });
+    return successResponse(
+      res,
+      {
+        liveClasses: statusData.liveClasses,
+        count: statusData.liveClasses.length,
+        currentPeriod: statusData.currentPeriod,
+        currentPeriodTiming: statusData.currentPeriodTiming,
+        currentTime: statusData.currentTime12,
+        todayDay: statusData.todayDay,
+        liveStats: statusData.liveStats
+      },
+      'Live classes running now retrieved'
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET VENUES STATUS (Occupied and Available)
+ * GET /api/v1/dean/venues-status
+ */
+const getVenuesStatus = async (req, res, next) => {
+  try {
+    const { time, day, type } = req.query;
+    const statusData = await calculateLiveAcademicStatus({
+      referenceDate: new Date(),
+      timeOverride: time,
+      dayOverride: day
+    });
+
+    let occupied = statusData.occupiedVenues;
+    let available = statusData.availableVenues;
+
+    if (type && type.trim() && type !== 'ALL') {
+      const typeFilter = type.trim().toLowerCase();
+      occupied = occupied.filter(v => v.venueType.toLowerCase() === typeFilter);
+      available = available.filter(v => v.venueType.toLowerCase() === typeFilter);
+    }
+
+    return successResponse(
+      res,
+      {
+        occupiedVenues: occupied,
+        availableVenues: available,
+        occupiedRooms: occupied.length,
+        freeRooms: available.length,
+        totalRooms: occupied.length + available.length,
+        currentPeriod: statusData.currentPeriod,
+        currentPeriodTiming: statusData.currentPeriodTiming,
+        currentTime: statusData.currentTime12,
+        todayDay: statusData.todayDay
+      },
+      'Venue occupancy and availability status retrieved'
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET FACULTY STATUS (Teaching and Available with 4 categories)
+ * GET /api/v1/dean/faculty-status
+ */
+const getFacultyStatus = async (req, res, next) => {
+  try {
+    const { time, day, category } = req.query;
+    const statusData = await calculateLiveAcademicStatus({
+      referenceDate: new Date(),
+      timeOverride: time,
+      dayOverride: day
+    });
+
+    let facultyList = statusData.availableFaculty;
+    if (category && category.trim() && category !== 'ALL') {
+      facultyList = facultyList.filter(f => f.category === category.trim());
+    }
+
+    return successResponse(
+      res,
+      {
+        faculty: facultyList,
+        teachingFaculty: statusData.teachingFaculty,
+        teachingCount: statusData.teachingFaculty.length,
+        availableNowCount: statusData.liveStats.freeFaculty,
+        notScheduledTodayCount: statusData.liveStats.facultyNotScheduledToday,
+        statusUnknownCount: statusData.liveStats.facultyStatusUnknown,
+        totalFaculty: statusData.liveStats.totalFaculty,
+        currentPeriod: statusData.currentPeriod,
+        currentPeriodTiming: statusData.currentPeriodTiming,
+        currentTime: statusData.currentTime12,
+        todayDay: statusData.todayDay
+      },
+      'Faculty status and availability retrieved'
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * SEARCH 4 — FREE ROOMS SEARCH
  * GET /api/v1/dean/free-rooms?day=:day&time=:time
  */
@@ -639,109 +891,43 @@ const getFreeRoomsSearch = async (req, res, next) => {
     let { day, time } = req.query;
 
     if (!day || !day.trim()) day = todayDay;
-    if (!time || !time.trim()) time = '10:00 AM';
+    if (!time || !time.trim()) time = format12HourTime(now);
 
-    const periods = await Period.find({ status: 'ACTIVE' }).sort({ order: 1 }).lean();
-    const matchedPeriod = findPeriodForTime(time, periods) || periods[0];
-
-    const [classrooms, labs] = await Promise.all([
-      Classroom.find({ status: { $ne: 'MAINTENANCE' } }).lean(),
-      Lab.find({ status: { $ne: 'MAINTENANCE' } }).lean()
-    ]);
-
-    const activeEntries = await TimetableEntry.find({
-      day,
-      period: matchedPeriod._id,
-      status: 'ACTIVE'
-    })
-      .populate('subject', 'name code')
-      .populate('faculty', 'fullName facultyId')
-      .populate('substituteFaculty', 'fullName facultyId')
-      .populate('section', 'name')
-      .lean();
-
-    const occupiedMap = new Map();
-    activeEntries.forEach(e => {
-      occupiedMap.set(e.roomId.toString(), e);
-      if (e.roomDetails?.roomNumber) {
-        occupiedMap.set(e.roomDetails.roomNumber.toUpperCase(), e);
-      }
-    });
-
-    const availableRooms = [];
-    const occupiedRooms = [];
-
-    // Classrooms
-    classrooms.forEach(r => {
-      const entry = occupiedMap.get(r._id.toString()) || occupiedMap.get(r.roomNumber.toUpperCase());
-      if (entry) {
-        const effFaculty = entry.isSubstituted && entry.substituteFaculty ? entry.substituteFaculty : entry.faculty;
-        occupiedRooms.push({
-          roomId: r._id,
-          roomNumber: r.roomNumber,
-          name: r.name || `Classroom ${r.roomNumber}`,
-          type: 'Classroom',
-          capacity: r.capacity || 60,
-          floor: r.floor || '',
-          className: entry.section?.name || 'Class',
-          subject: entry.subject?.name || 'Subject',
-          faculty: effFaculty?.fullName || 'Faculty',
-          period: matchedPeriod.periodNumber,
-          time: `${matchedPeriod.startTime} - ${matchedPeriod.endTime}`
-        });
-      } else {
-        availableRooms.push({
-          roomId: r._id,
-          roomNumber: r.roomNumber,
-          name: r.name || `Classroom ${r.roomNumber}`,
-          type: 'Classroom',
-          capacity: r.capacity || 60,
-          floor: r.floor || '',
-          status: 'AVAILABLE'
-        });
-      }
-    });
-
-    // Labs
-    labs.forEach(l => {
-      const entry = occupiedMap.get(l._id.toString()) || occupiedMap.get(l.labNumber.toUpperCase());
-      if (entry) {
-        const effFaculty = entry.isSubstituted && entry.substituteFaculty ? entry.substituteFaculty : entry.faculty;
-        occupiedRooms.push({
-          roomId: l._id,
-          roomNumber: l.labNumber,
-          name: l.labName || `Lab ${l.labNumber}`,
-          type: 'Lab',
-          capacity: l.capacity || 40,
-          floor: l.floor || '',
-          className: entry.section?.name || 'Class',
-          subject: entry.subject?.name || 'Subject',
-          faculty: effFaculty?.fullName || 'Faculty',
-          period: matchedPeriod.periodNumber,
-          time: `${matchedPeriod.startTime} - ${matchedPeriod.endTime}`
-        });
-      } else {
-        availableRooms.push({
-          roomId: l._id,
-          roomNumber: l.labNumber,
-          name: l.labName || `Lab ${l.labNumber}`,
-          type: 'Lab',
-          capacity: l.capacity || 40,
-          floor: l.floor || '',
-          status: 'AVAILABLE'
-        });
-      }
+    const statusData = await calculateLiveAcademicStatus({
+      referenceDate: now,
+      timeOverride: time,
+      dayOverride: day
     });
 
     return successResponse(res, {
-      day,
-      period: matchedPeriod.periodNumber,
-      time: `${matchedPeriod.startTime} - ${matchedPeriod.endTime}`,
-      availableRooms,
-      occupiedRooms,
-      totalAvailable: availableRooms.length,
-      totalOccupied: occupiedRooms.length,
-      totalRooms: availableRooms.length + occupiedRooms.length
+      day: statusData.todayDay,
+      period: statusData.currentPeriod || 'P1',
+      time: statusData.currentPeriodTiming,
+      availableRooms: statusData.availableVenues.map(v => ({
+        roomId: v.venueId,
+        roomNumber: v.identifier,
+        name: v.name,
+        type: v.venueType,
+        capacity: v.capacity,
+        floor: v.floor,
+        status: 'AVAILABLE'
+      })),
+      occupiedRooms: statusData.occupiedVenues.map(v => ({
+        roomId: v.venueId,
+        roomNumber: v.identifier,
+        name: v.name,
+        type: v.venueType,
+        capacity: v.capacity,
+        floor: v.floor,
+        className: v.runningClass?.section || 'Class',
+        subject: v.runningClass?.subject || 'Subject',
+        faculty: v.runningClass?.faculty || 'Faculty',
+        period: v.runningClass?.period || statusData.currentPeriod || 'P1',
+        time: v.runningClass?.time || statusData.currentPeriodTiming
+      })),
+      totalAvailable: statusData.availableVenues.length,
+      totalOccupied: statusData.occupiedVenues.length,
+      totalRooms: statusData.liveStats.totalRooms
     }, 'Free and occupied rooms calculated successfully');
   } catch (error) {
     next(error);
@@ -757,7 +943,7 @@ const getCurrentStatusSearch = async (req, res, next) => {
     const now = new Date();
     const todayDay = DAYS_OF_WEEK[now.getDay()];
     const currentTimeStr = format12HourTime(now);
-    const { q } = req.query;
+    const { q, time, day } = req.query;
 
     const periods = await Period.find({ status: 'ACTIVE' }).sort({ order: 1 }).lean();
     let currentPeriod = null;
@@ -773,44 +959,74 @@ const getCurrentStatusSearch = async (req, res, next) => {
     }
 
     if (!q || !q.trim()) {
-      const activeEntries = await TimetableEntry.find({
-        day: todayDay,
-        period: currentPeriod?._id,
-        status: 'ACTIVE'
-      })
-        .populate('period')
-        .populate('subject', 'name code')
-        .populate('faculty', 'fullName facultyId')
-        .populate('substituteFaculty', 'fullName facultyId')
-        .populate('section', 'name')
-        .lean();
+      const statusData = await calculateLiveAcademicStatus({
+        referenceDate: now,
+        timeOverride: time,
+        dayOverride: day
+      });
 
       return successResponse(res, {
-        currentTime: currentTimeStr,
-        todayDay,
-        currentPeriod: currentPeriod ? currentPeriod.periodNumber : null,
-        currentPeriodTime: currentPeriod ? `${currentPeriod.startTime} - ${currentPeriod.endTime}` : 'Off hours',
-        activeClassesCount: activeEntries.length,
-        activeClasses: activeEntries.map(e => ({
-          room: e.roomDetails?.roomNumber || 'Room',
-          subject: e.subject?.name,
-          faculty: (e.isSubstituted && e.substituteFaculty ? e.substituteFaculty : e.faculty)?.fullName,
-          section: e.section?.name,
-          time: `${e.period?.startTime} - ${e.period?.endTime}`,
+        currentTime: statusData.currentTime12,
+        todayDay: statusData.todayDay,
+        currentPeriod: statusData.currentPeriod,
+        currentPeriodTime: statusData.currentPeriodTiming,
+        activeClassesCount: statusData.liveClasses.length,
+        activeClasses: statusData.liveClasses.map(e => ({
+          room: e.room,
+          subject: e.subject,
+          faculty: e.faculty,
+          section: e.section,
+          time: e.time,
           status: 'LIVE'
         }))
       }, 'Live status snapshot retrieved');
     }
 
     const term = q.trim();
-    const regex = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    let roomDoc = null;
+    let facultyDoc = null;
+    let roomType = 'Classroom';
 
-    // 1. Match Room
-    const roomDoc = await Classroom.findOne({ roomNumber: regex }).lean()
-      || await Lab.findOne({ $or: [{ labNumber: regex }, { labName: regex }] }).lean();
+    // 1. Check if term is a valid ObjectId
+    if (mongoose.Types.ObjectId.isValid(term)) {
+      roomDoc = await Classroom.findById(term).lean();
+      if (!roomDoc) {
+        roomDoc = await Lab.findById(term).lean();
+        if (roomDoc) roomType = 'Lab';
+      }
+      if (!roomDoc) {
+        roomDoc = await Auditorium.findById(term).lean();
+        if (roomDoc) roomType = 'Auditorium';
+      }
+      if (!roomDoc) {
+        facultyDoc = await Faculty.findById(term).lean();
+      }
+    }
+
+    // 2. Check by name / identifier regex
+    if (!roomDoc && !facultyDoc) {
+      const regex = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      roomDoc = await Classroom.findOne({ roomNumber: regex }).lean();
+      if (!roomDoc) {
+        roomDoc = await Lab.findOne({ $or: [{ labNumber: regex }, { labName: regex }] }).lean();
+        if (roomDoc) roomType = 'Lab';
+      }
+      if (!roomDoc) {
+        roomDoc = await Auditorium.findOne({
+          $or: [{ auditoriumNumber: regex }, { auditoriumName: regex }, { name: regex }]
+        }).lean();
+        if (roomDoc) roomType = 'Auditorium';
+      }
+      if (!roomDoc) {
+        facultyDoc = await Faculty.findOne({
+          $or: [{ fullName: regex }, { facultyId: regex }, { officialEmail: regex }]
+        }).lean();
+      }
+    }
 
     if (roomDoc) {
-      const roomNum = roomDoc.roomNumber || roomDoc.labNumber;
+      const roomNum = roomDoc.roomNumber || roomDoc.labNumber || roomDoc.auditoriumNumber || roomDoc.name;
+      const roomDisplayName = roomDoc.name || roomDoc.labName || roomDoc.auditoriumName || roomNum;
       let occupiedEntry = null;
 
       if (currentPeriod) {
@@ -847,6 +1063,8 @@ const getCurrentStatusSearch = async (req, res, next) => {
         nextStatusChange = 'No further classes today';
       }
 
+      const entityTypeLabel = roomType.toUpperCase();
+
       if (occupiedEntry) {
         const effFaculty = occupiedEntry.isSubstituted && occupiedEntry.substituteFaculty
           ? occupiedEntry.substituteFaculty
@@ -856,7 +1074,8 @@ const getCurrentStatusSearch = async (req, res, next) => {
           entityType: 'ROOM',
           title: `ROOM ${roomNum}`,
           roomNumber: roomNum,
-          roomName: roomDoc.name || roomDoc.labName,
+          roomName: roomDisplayName,
+          roomType,
           status: 'OCCUPIED',
           badgeColor: 'red',
           currentTime: currentTimeStr,
@@ -867,13 +1086,14 @@ const getCurrentStatusSearch = async (req, res, next) => {
           faculty: effFaculty?.fullName || 'Faculty',
           facultyId: effFaculty?.facultyId || '',
           nextStatusChange
-        }, 'Room status retrieved');
+        }, `${roomType} status retrieved`);
       } else {
         return successResponse(res, {
           entityType: 'ROOM',
           title: `ROOM ${roomNum}`,
           roomNumber: roomNum,
-          roomName: roomDoc.name || roomDoc.labName,
+          roomName: roomDisplayName,
+          roomType,
           status: 'FREE',
           badgeColor: 'green',
           currentTime: currentTimeStr,
@@ -883,14 +1103,9 @@ const getCurrentStatusSearch = async (req, res, next) => {
           subject: null,
           faculty: null,
           nextStatusChange
-        }, 'Room is currently free');
+        }, `${roomType} is currently free`);
       }
     }
-
-    // 2. Match Faculty
-    const facultyDoc = await Faculty.findOne({
-      $or: [{ fullName: regex }, { facultyId: regex }, { officialEmail: regex }]
-    }).lean();
 
     if (facultyDoc) {
       let activeClass = null;
@@ -973,11 +1188,12 @@ const getCurrentStatusSearch = async (req, res, next) => {
 
 /**
  * GLOBAL MULTI-ENTITY SEARCH
- * GET /api/v1/dean/search?q=:query&category=:category
+ * GET /api/v1/dean/search?q=:query&category=:category&limit=:limit&types=:types
  */
 const globalSearch = async (req, res, next) => {
   try {
-    const { q, category = 'ALL' } = req.query;
+    const { q, category = 'ALL', types } = req.query;
+    const categoryLimit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 50);
 
     if (!q || !q.trim()) {
       return successResponse(
@@ -986,24 +1202,109 @@ const globalSearch = async (req, res, next) => {
           query: '',
           totalCount: 0,
           categories: {},
-          results: []
+          results: [],
+          allResults: [],
+          categorized: {}
         },
         'Empty search query'
       );
     }
 
     const searchTerm = q.trim();
-    const regex = new RegExp(searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    const escapeRegex = (str) => str.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
 
-    const searchFaculty = category === 'ALL' || category === 'FACULTY';
-    const searchSubjects = category === 'ALL' || category === 'SUBJECTS';
-    const searchClassrooms = category === 'ALL' || category === 'CLASSROOMS';
-    const searchLabs = category === 'ALL' || category === 'LABS';
-    const searchAuditoriums = category === 'ALL' || category === 'AUDITORIUMS';
-    const searchSemesters = category === 'ALL' || category === 'SEMESTERS';
-    const searchSections = category === 'ALL' || category === 'SECTIONS';
-    const searchTimetable = category === 'ALL' || category === 'TIMETABLE';
-    const searchSubstitutions = category === 'ALL' || category === 'SUBSTITUTIONS';
+    // Flexible spelling pattern for common names/vowels
+    const makeFlexiblePattern = (str) => {
+      let pat = escapeRegex(str);
+      pat = pat.replace(/th/gi, 't[h]?');
+      pat = pat.replace(/ee/gi, '(?:ee|i|e)');
+      return pat;
+    };
+
+    const regex = new RegExp(escapeRegex(searchTerm), 'i');
+    const flexibleRegex = new RegExp(makeFlexiblePattern(searchTerm), 'i');
+    const tokens = searchTerm.split(/\s+/).filter(Boolean);
+
+    // Support category filter or comma-separated types parameter
+    const allowedTypes = types
+      ? types.toUpperCase().split(',').map((t) => t.trim())
+      : null;
+
+    const shouldSearch = (cat) => {
+      if (allowedTypes) return allowedTypes.includes(cat);
+      return category === 'ALL' || category === cat;
+    };
+
+    const searchFaculty = shouldSearch('FACULTY');
+    const searchSubjects = shouldSearch('SUBJECTS');
+    const searchClassrooms = shouldSearch('CLASSROOMS');
+    const searchLabs = shouldSearch('LABS');
+    const searchAuditoriums = shouldSearch('AUDITORIUMS');
+    const searchSemesters = shouldSearch('SEMESTERS');
+    const searchSections = shouldSearch('SECTIONS');
+    const searchTimetable = shouldSearch('TIMETABLE');
+    const searchSubstitutions = shouldSearch('SUBSTITUTIONS');
+
+    // Pre-resolve referenced entities for rich Timetable and Section searching
+    const [
+      matchedFacultiesForTT,
+      matchedSubjectsForTT,
+      matchedSectionsForTT,
+      matchedPeriodsForTT,
+      matchedSemestersForSec
+    ] = await Promise.all([
+      searchTimetable
+        ? Faculty.find({
+            $or: [
+              { fullName: flexibleRegex },
+              { facultyId: regex },
+              { officialEmail: regex },
+              { designation: regex }
+            ]
+          }).select('_id')
+        : [],
+      searchTimetable
+        ? Subject.find({
+            $or: [{ name: regex }, { code: regex }]
+          }).select('_id')
+        : [],
+      searchTimetable
+        ? ClassSection.find({ name: regex }).select('_id')
+        : [],
+      searchTimetable
+        ? Period.find({
+            $or: [{ periodNumber: regex }]
+          }).select('_id')
+        : [],
+      searchSections
+        ? Semester.find({
+            $or: [{ name: regex }, { academicYear: regex }]
+          }).select('_id')
+        : []
+    ]);
+
+    // Build faculty search query with token support for multi-word queries
+    const facultyOr = [
+      { fullName: flexibleRegex },
+      { officialEmail: regex },
+      { personalEmail: regex },
+      { facultyId: regex },
+      { designation: regex },
+      { department: regex }
+    ];
+
+    if (tokens.length > 1) {
+      facultyOr.push({
+        $and: tokens.map((t) => ({
+          $or: [
+            { fullName: new RegExp(makeFlexiblePattern(t), 'i') },
+            { facultyId: new RegExp(escapeRegex(t), 'i') },
+            { designation: new RegExp(escapeRegex(t), 'i') },
+            { department: new RegExp(escapeRegex(t), 'i') }
+          ]
+        }))
+      });
+    }
 
     const [
       faculties,
@@ -1017,17 +1318,11 @@ const globalSearch = async (req, res, next) => {
       substitutions
     ] = await Promise.all([
       searchFaculty
-        ? Faculty.find({
-            $or: [
-              { fullName: regex },
-              { officialEmail: regex },
-              { personalEmail: regex },
-              { facultyId: regex },
-              { designation: regex }
-            ]
-          })
+        ? Faculty.find({ $or: facultyOr })
+            .select('-password')
             .populate('assignedSubjects', 'name code')
             .populate('assignedSections', 'name')
+            .limit(categoryLimit)
             .lean()
         : [],
       searchSubjects
@@ -1035,29 +1330,46 @@ const globalSearch = async (req, res, next) => {
             $or: [{ name: regex }, { code: regex }, { type: regex }]
           })
             .populate('semester', 'name academicYear')
+            .limit(categoryLimit)
             .lean()
         : [],
       searchClassrooms
-        ? Classroom.find({ roomNumber: regex }).lean()
+        ? Classroom.find({
+            $or: [{ roomNumber: regex }, { name: regex }, { floor: regex }]
+          })
+            .limit(categoryLimit)
+            .lean()
         : [],
       searchLabs
         ? Lab.find({
-            $or: [{ labNumber: regex }, { labName: regex }]
-          }).lean()
+            $or: [{ labNumber: regex }, { labName: regex }, { floor: regex }]
+          })
+            .limit(categoryLimit)
+            .lean()
         : [],
       searchAuditoriums
         ? Auditorium.find({
             $or: [{ auditoriumNumber: regex }, { auditoriumName: regex }]
-          }).lean()
+          })
+            .limit(categoryLimit)
+            .lean()
         : [],
       searchSemesters
         ? Semester.find({
             $or: [{ name: regex }, { academicYear: regex }]
-          }).lean()
+          })
+            .limit(categoryLimit)
+            .lean()
         : [],
       searchSections
-        ? ClassSection.find({ name: regex })
+        ? ClassSection.find({
+            $or: [
+              { name: regex },
+              { semester: { $in: matchedSemestersForSec.map((s) => s._id) } }
+            ]
+          })
             .populate('semester', 'name academicYear')
+            .limit(categoryLimit)
             .lean()
         : [],
       searchTimetable
@@ -1065,16 +1377,21 @@ const globalSearch = async (req, res, next) => {
             $or: [
               { day: regex },
               { roomType: regex },
-              { 'roomDetails.roomNumber': regex }
+              { 'roomDetails.roomNumber': regex },
+              { 'roomDetails.name': regex },
+              { faculty: { $in: matchedFacultiesForTT.map((f) => f._id) } },
+              { subject: { $in: matchedSubjectsForTT.map((s) => s._id) } },
+              { section: { $in: matchedSectionsForTT.map((s) => s._id) } },
+              { period: { $in: matchedPeriodsForTT.map((p) => p._id) } }
             ],
             status: 'ACTIVE'
           })
             .populate('period')
             .populate('subject', 'name code')
-            .populate('faculty', 'fullName facultyId officialEmail')
+            .populate('faculty', 'fullName facultyId officialEmail designation')
             .populate('section', 'name')
             .populate('semester', 'name')
-            .limit(10)
+            .limit(categoryLimit)
             .lean()
         : [],
       searchSubstitutions
@@ -1091,93 +1408,112 @@ const globalSearch = async (req, res, next) => {
             .populate('originalFaculty', 'fullName facultyId')
             .populate('substituteFaculty', 'fullName facultyId')
             .populate('section', 'name')
-            .limit(10)
+            .limit(categoryLimit)
             .lean()
         : []
     ]);
 
-    // Format results by category
+    // Format results with standardized navigation URLs and rich metadata
     const categorized = {
       FACULTY: faculties.map((f) => ({
         id: f._id,
         category: 'FACULTY',
+        type: 'Faculty',
         title: f.fullName,
-        subtitle: `${f.designation} (${f.facultyId})`,
+        subtitle: `${f.designation || 'Faculty'} • ID: ${f.facultyId || '—'} • ${f.department || 'Computer Science'}`,
         email: f.officialEmail,
-        badge: f.status,
+        badge: f.facultyId ? `ID: ${f.facultyId}` : (f.status || 'ACTIVE'),
         meta: `${f.assignedSubjects?.length || 0} Subjects • ${f.assignedSections?.length || 0} Sections`,
+        navigationUrl: `/dean/faculty/${f._id}`,
+        fallbackUrl: `/dean/faculty-search?faculty=${encodeURIComponent(f.fullName)}`,
         raw: f
       })),
       SUBJECTS: subjects.map((s) => ({
         id: s._id,
         category: 'SUBJECTS',
+        type: 'Subject',
         title: s.name,
         subtitle: `Code: ${s.code} • ${s.type || 'Theory'}`,
-        badge: s.status || 'ACTIVE',
-        meta: `Semester: ${s.semester?.name || 'N/A'} (${s.credits || 4} Credits)`,
+        badge: s.code || s.status || 'ACTIVE',
+        meta: `Semester: ${s.semester?.name || 'Computer Science'} (${s.credits || 4} Credits)`,
+        navigationUrl: `/dean/subjects?id=${s._id}`,
         raw: s
       })),
       CLASSROOMS: classrooms.map((c) => ({
         id: c._id,
         category: 'CLASSROOMS',
+        type: 'Classroom',
         title: c.roomNumber,
-        subtitle: `Capacity: ${c.capacity} Students`,
-        badge: c.status,
-        meta: `Classroom • Floor: ${c.floor || 'Standard'}`,
+        subtitle: `${c.name || 'Classroom'} • Capacity: ${c.capacity || 60} Students`,
+        badge: `Cap: ${c.capacity || 60}`,
+        meta: `Floor: ${c.floor || 'Standard'} • Status: ${c.status || 'AVAILABLE'}`,
+        navigationUrl: `/dean/room-search?room=${encodeURIComponent(c.roomNumber)}`,
         raw: c
       })),
       LABS: labs.map((l) => ({
         id: l._id,
         category: 'LABS',
+        type: 'Laboratory',
         title: l.labNumber,
         subtitle: l.labName || 'Computer Lab',
-        badge: l.status,
-        meta: `Capacity: ${l.capacity} • Floor: ${l.floor || 'Ground'}`,
+        badge: `Cap: ${l.capacity || 40}`,
+        meta: `Floor: ${l.floor || 'Ground'} • Status: ${l.status || 'AVAILABLE'}`,
+        navigationUrl: `/dean/room-search?room=${encodeURIComponent(l.labNumber)}`,
         raw: l
       })),
       AUDITORIUMS: auditoriums.map((a) => ({
         id: a._id,
         category: 'AUDITORIUMS',
+        type: 'Auditorium',
         title: a.auditoriumNumber,
-        subtitle: a.auditoriumName,
-        badge: a.status,
-        meta: `Capacity: ${a.capacity} Seats`,
+        subtitle: a.auditoriumName || `Auditorium ${a.auditoriumNumber}`,
+        badge: `Cap: ${a.capacity || 250}`,
+        meta: `Capacity: ${a.capacity || 250} Seats • Status: ${a.status || 'ACTIVE'}`,
+        navigationUrl: `/dean/room-search?room=${encodeURIComponent(a.auditoriumNumber || a.auditoriumName)}`,
         raw: a
       })),
       SEMESTERS: semesters.map((sem) => ({
         id: sem._id,
         category: 'SEMESTERS',
+        type: 'Semester',
         title: sem.name,
         subtitle: `Academic Year: ${sem.academicYear}`,
-        badge: sem.status,
+        badge: sem.status || 'ACTIVE',
         meta: `Department of Computer Science`,
+        navigationUrl: `/dean/semesters`,
         raw: sem
       })),
       SECTIONS: sections.map((sec) => ({
         id: sec._id,
         category: 'SECTIONS',
+        type: 'Class Section',
         title: sec.name,
-        subtitle: `Semester: ${sec.semester?.name || 'N/A'}`,
-        badge: sec.status,
+        subtitle: `Semester: ${sec.semester?.name || 'N/A'}${sec.semester?.academicYear ? ` (${sec.semester.academicYear})` : ''}`,
+        badge: sec.status || 'ACTIVE',
         meta: `Capacity: ${sec.capacity || 60} Students`,
+        navigationUrl: `/dean/class-search?section=${sec._id}`,
         raw: sec
       })),
       TIMETABLE: timetableEntries.map((t) => ({
         id: t._id,
         category: 'TIMETABLE',
-        title: `${t.subject?.name || 'Subject'} (${t.period?.periodNumber || 'P1'})`,
-        subtitle: `${t.day} • ${t.period?.startTime || ''} - ${t.period?.endTime || ''}`,
+        type: 'Timetable',
+        title: `${t.subject?.name || 'Subject'} (${t.period?.periodNumber || 'Period'})`,
+        subtitle: `${t.day} • ${t.period?.startTime || ''} - ${t.period?.endTime || ''} • Room ${t.roomDetails?.roomNumber || 'Assigned'}`,
         badge: t.roomDetails?.roomNumber || 'Room',
         meta: `Faculty: ${t.faculty?.fullName || 'N/A'} • Section: ${t.section?.name || 'N/A'}`,
+        navigationUrl: `/dean/class-search?section=${t.section?._id || t.section}&day=${encodeURIComponent(t.day)}`,
         raw: t
       })),
       SUBSTITUTIONS: substitutions.map((sub) => ({
         id: sub._id,
         category: 'SUBSTITUTIONS',
+        type: 'Substitution',
         title: `${sub.subject?.name || 'Substitution'} (${sub.period?.periodNumber || 'Period'})`,
         subtitle: `Original: ${sub.originalFaculty?.fullName || ''} → Sub: ${sub.substituteFaculty?.fullName || ''}`,
-        badge: sub.status,
+        badge: sub.status || 'SUBSTITUTED',
         meta: `Date: ${sub.date} • Room: ${sub.roomDetails?.roomNumber || 'Assigned'}`,
+        navigationUrl: `/dean/substitutions`,
         raw: sub
       }))
     };
@@ -1361,6 +1697,8 @@ const getFacultyDetails = async (req, res, next) => {
       res,
       {
         faculty,
+        assignedSubjects: faculty.assignedSubjects || [],
+        assignedSections: faculty.assignedSections || [],
         assignedRooms: Array.from(assignedRooms),
         weeklySchedule,
         todayClasses,
@@ -2423,5 +2761,9 @@ module.exports = {
   getRoomWiseSearch,
   getFacultyWiseSearch,
   getFreeRoomsSearch,
-  getCurrentStatusSearch
+  getCurrentStatusSearch,
+  getLiveStatus,
+  getLiveClasses,
+  getVenuesStatus,
+  getFacultyStatus
 };

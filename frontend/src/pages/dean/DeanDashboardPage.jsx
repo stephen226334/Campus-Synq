@@ -34,6 +34,7 @@ import {
   formatAcademicStatus,
   formatAcademicFaculty
 } from '../../utils/academicFormatter';
+import LiveAcademicStatusModal from '../../components/dean/LiveAcademicStatusModal';
 
 export const DeanDashboardPage = () => {
   const navigate = useNavigate();
@@ -47,6 +48,15 @@ export const DeanDashboardPage = () => {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Dedicated Live Operational Status Modal State
+  const [isLiveModalOpen, setIsLiveModalOpen] = useState(false);
+  const [liveModalTab, setLiveModalTab] = useState('LIVE_CLASSES');
+
+  const handleOpenLiveModal = (tab = 'LIVE_CLASSES') => {
+    setLiveModalTab(tab);
+    setIsLiveModalOpen(true);
+  };
 
   const searchBoxRef = useRef(null);
 
@@ -273,7 +283,7 @@ export const DeanDashboardPage = () => {
             {/* 2. CLASSES RUNNING NOW */}
             <div
               className="dp-stat-card"
-              onClick={() => navigate('/dean/current-status')}
+              onClick={() => handleOpenLiveModal('LIVE_CLASSES')}
               title="Inspect live running classes"
             >
               <div className="dp-stat-top">
@@ -289,8 +299,8 @@ export const DeanDashboardPage = () => {
             {/* 3. AVAILABLE ROOMS */}
             <div
               className="dp-stat-card"
-              onClick={() => navigate('/dean/free-rooms')}
-              title="Inspect Free Rooms Search"
+              onClick={() => handleOpenLiveModal('AVAILABLE_ROOMS')}
+              title="Inspect Free & Available Venues"
             >
               <div className="dp-stat-top">
                 <span className="dp-stat-title">Available Rooms</span>
@@ -303,8 +313,8 @@ export const DeanDashboardPage = () => {
             {/* 4. OCCUPIED ROOMS */}
             <div
               className="dp-stat-card"
-              onClick={() => navigate('/dean/room-search')}
-              title="Inspect Room Timetables"
+              onClick={() => handleOpenLiveModal('OCCUPIED_ROOMS')}
+              title="Inspect Occupied Venues"
             >
               <div className="dp-stat-top">
                 <span className="dp-stat-title">Occupied Rooms</span>
@@ -317,8 +327,8 @@ export const DeanDashboardPage = () => {
             {/* 5. FACULTY TEACHING NOW */}
             <div
               className="dp-stat-card"
-              onClick={() => navigate('/dean/faculty-search')}
-              title="Inspect Faculty Status"
+              onClick={() => handleOpenLiveModal('TEACHING_FACULTY')}
+              title="Inspect Faculty Currently Teaching"
             >
               <div className="dp-stat-top">
                 <span className="dp-stat-title">Faculty Teaching Now</span>
@@ -331,8 +341,8 @@ export const DeanDashboardPage = () => {
             {/* 6. FACULTY AVAILABLE */}
             <div
               className="dp-stat-card"
-              onClick={() => navigate('/dean/faculty-search')}
-              title="Inspect Available Faculty"
+              onClick={() => handleOpenLiveModal('AVAILABLE_FACULTY')}
+              title="Inspect Available Faculty Directory"
             >
               <div className="dp-stat-top">
                 <span className="dp-stat-title">Faculty Available</span>
@@ -355,10 +365,21 @@ export const DeanDashboardPage = () => {
                   Classes currently in progress
                 </div>
               </div>
-              <Link to="/dean/timetable" className="dp-btn-link">
-                <span>View Current Schedule</span>
-                <ExternalLink size={14} />
-              </Link>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <button
+                  type="button"
+                  className="dp-btn dp-btn-primary dp-btn-sm"
+                  onClick={() => handleOpenLiveModal('LIVE_CLASSES')}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Activity size={14} />
+                  <span>Live Classes Now ({currentlyActiveClasses.length})</span>
+                </button>
+                <Link to="/dean/timetable" className="dp-btn-link">
+                  <span>Schedule</span>
+                  <ExternalLink size={14} />
+                </Link>
+              </div>
             </div>
 
             {currentlyActiveClasses.length > 0 ? (
@@ -379,6 +400,10 @@ export const DeanDashboardPage = () => {
                             title: `${item.period} — ${item.subject}`,
                             details: item
                           });
+                        } else if (item.sectionId) {
+                          navigate(`/dean/class-search?section=${item.sectionId}`);
+                        } else {
+                          navigate('/dean/timetable');
                         }
                       }}
                     >
@@ -425,9 +450,15 @@ export const DeanDashboardPage = () => {
                   <div className="dp-empty-live-heading">No Classes Running Now</div>
                   <div className="dp-empty-live-description">There are no active classes at the moment.</div>
                 </div>
-                <Link to="/dean/timetable" className="dp-btn dp-btn-primary dp-btn-sm dp-empty-live-btn">
-                  <span>View Current Schedule</span>
-                </Link>
+                <button
+                  type="button"
+                  className="dp-btn dp-btn-primary dp-btn-sm dp-empty-live-btn"
+                  onClick={() => handleOpenLiveModal('LIVE_CLASSES')}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Activity size={14} />
+                  <span>Inspect Live Status</span>
+                </button>
               </div>
             )}
           </div>
@@ -441,24 +472,31 @@ export const DeanDashboardPage = () => {
                   <h3 className="dp-overview-title">Room Availability</h3>
                   <p className="dp-overview-sub">Current room usage across the department</p>
                 </div>
-                <Link to="/dean/free-rooms" className="dp-btn-sm dp-btn-outline">
+                <button
+                  type="button"
+                  className="dp-btn-sm dp-btn-outline"
+                  onClick={() => handleOpenLiveModal('AVAILABLE_ROOMS')}
+                  style={{ cursor: 'pointer' }}
+                >
                   View Rooms &rarr;
-                </Link>
+                </button>
               </div>
 
               <div className="dp-util-split-stats">
                 <div
                   className="dp-util-stat-box green"
-                  onClick={() => navigate('/dean/free-rooms')}
+                  onClick={() => handleOpenLiveModal('AVAILABLE_ROOMS')}
                   title="Click to view Available Rooms"
+                  style={{ cursor: 'pointer' }}
                 >
                   <span className="dp-util-num">{liveStats.freeRooms ?? 0}</span>
                   <span className="dp-util-lbl">Available Rooms</span>
                 </div>
                 <div
                   className="dp-util-stat-box red"
-                  onClick={() => navigate('/dean/room-search')}
+                  onClick={() => handleOpenLiveModal('OCCUPIED_ROOMS')}
                   title="Click to inspect Occupied Rooms"
+                  style={{ cursor: 'pointer' }}
                 >
                   <span className="dp-util-num">{liveStats.occupiedRooms ?? 0}</span>
                   <span className="dp-util-lbl">Occupied Rooms</span>
@@ -467,7 +505,13 @@ export const DeanDashboardPage = () => {
 
               <div className="dp-util-total-strip">
                 <span>Total Rooms: <strong>{liveStats.totalRooms || 30}</strong></span>
-                <span className="dp-util-link" onClick={() => navigate('/dean/free-rooms')}>View Rooms →</span>
+                <span
+                  className="dp-util-link"
+                  onClick={() => handleOpenLiveModal('AVAILABLE_ROOMS')}
+                  style={{ cursor: 'pointer' }}
+                >
+                  View Rooms →
+                </span>
               </div>
             </div>
 
@@ -478,24 +522,31 @@ export const DeanDashboardPage = () => {
                   <h3 className="dp-overview-title">Faculty Status</h3>
                   <p className="dp-overview-sub">Current teaching availability</p>
                 </div>
-                <Link to="/dean/faculty-search" className="dp-btn-sm dp-btn-outline">
+                <button
+                  type="button"
+                  className="dp-btn-sm dp-btn-outline"
+                  onClick={() => handleOpenLiveModal('AVAILABLE_FACULTY')}
+                  style={{ cursor: 'pointer' }}
+                >
                   View Faculty →
-                </Link>
+                </button>
               </div>
 
               <div className="dp-util-split-stats">
                 <div
                   className="dp-util-stat-box orange"
-                  onClick={() => navigate('/dean/faculty-search')}
+                  onClick={() => handleOpenLiveModal('TEACHING_FACULTY')}
                   title="Click to view Faculty Teaching Now"
+                  style={{ cursor: 'pointer' }}
                 >
                   <span className="dp-util-num">{liveStats.facultyInClass ?? 0}</span>
                   <span className="dp-util-lbl">Teaching Now</span>
                 </div>
                 <div
                   className="dp-util-stat-box blue"
-                  onClick={() => navigate('/dean/faculty-search')}
+                  onClick={() => handleOpenLiveModal('AVAILABLE_FACULTY')}
                   title="Click to view Available Faculty"
+                  style={{ cursor: 'pointer' }}
                 >
                   <span className="dp-util-num">{liveStats.freeFaculty ?? 0}</span>
                   <span className="dp-util-lbl">Available</span>
@@ -503,8 +554,14 @@ export const DeanDashboardPage = () => {
               </div>
 
               <div className="dp-util-total-strip">
-                <span>Total Faculty: <strong>{liveStats.totalFaculty || metrics.activeFaculty || 6}</strong></span>
-                <span className="dp-util-link" onClick={() => navigate('/dean/faculty-search')}>View Faculty →</span>
+                <span>Total Faculty: <strong>{liveStats.totalFaculty || metrics.activeFaculty || 15}</strong></span>
+                <span
+                  className="dp-util-link"
+                  onClick={() => handleOpenLiveModal('AVAILABLE_FACULTY')}
+                  style={{ cursor: 'pointer' }}
+                >
+                  View Faculty →
+                </span>
               </div>
             </div>
           </div>
@@ -633,6 +690,28 @@ export const DeanDashboardPage = () => {
           </div>
         </>
       )}
+
+      {/* DEDICATED LIVE ACADEMIC STATUS & OPERATIONS MODAL */}
+      <LiveAcademicStatusModal
+        isOpen={isLiveModalOpen}
+        onClose={() => setIsLiveModalOpen(false)}
+        initialTab={liveModalTab}
+        dashboardData={dashboardData}
+        onSelectClass={(item) => {
+          if (openEntityDrawer) {
+            openEntityDrawer({
+              entityType: 'TIMETABLE',
+              id: item._id,
+              title: `${item.period} — ${item.subject}`,
+              details: item
+            });
+          } else if (item.sectionId) {
+            navigate(`/dean/class-search?section=${item.sectionId}`);
+          } else {
+            navigate('/dean/timetable');
+          }
+        }}
+      />
     </div>
   );
 };

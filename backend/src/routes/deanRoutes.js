@@ -11,6 +11,12 @@ router.use(roleMiddleware(['DEAN']));
 // Dean Dashboard Overview & Live Academic Schedule
 router.get('/dashboard', deanController.getDeanDashboard);
 
+// Dedicated Live Academic Status Endpoints
+router.get('/live-status', deanController.getLiveStatus);
+router.get('/live-classes', deanController.getLiveClasses);
+router.get('/venues-status', deanController.getVenuesStatus);
+router.get('/faculty-status', deanController.getFacultyStatus);
+
 // Five Dedicated Search Modes & Quick Search
 router.get('/quick-search', deanController.getQuickSearchSuggestions);
 router.get('/class-wise', deanController.getClassWiseSearch);

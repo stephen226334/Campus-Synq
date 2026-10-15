@@ -1,8 +1,14 @@
 import api from './client';
 
 export const deanApi = {
-  getDashboard: () => api.get('/dean/dashboard'),
-  search: (q, category) => api.get('/dean/search', { q, category }),
+  getDashboard: (params) => api.get('/dean/dashboard', params),
+  getLiveStatus: (params) => api.get('/dean/live-status', params),
+  getLiveClasses: (params) => api.get('/dean/live-classes', params),
+  getVenuesStatus: (params) => api.get('/dean/venues-status', params),
+  getFacultyStatus: (params) => api.get('/dean/faculty-status', params),
+  search: (q, category = 'ALL', limit, types, options = {}) =>
+    api.get('/dean/search', { q, category, limit, types }, options),
+  unifiedSearch: (params, options = {}) => api.get('/search', params, options),
   getFacultyList: (params) => api.get('/dean/faculty', params),
   getFacultyDetails: (id) => api.get(`/dean/faculty/${id}`),
   getSubjectList: () => api.get('/dean/subjects'),

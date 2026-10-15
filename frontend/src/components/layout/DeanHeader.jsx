@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Clock, Moon, Sun, LogOut, Menu, X, Search, ShieldCheck } from 'lucide-react';
+import { Clock, Moon, Sun, LogOut, Menu, X, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useToast } from '../../context/ToastContext';
+import GlobalSmartSearch from '../common/GlobalSmartSearch';
 
 export const DeanHeader = ({ onToggleMobileSidebar, mobileSidebarOpen, onOpenSearch }) => {
   const { user, logout } = useAuth();
@@ -72,22 +73,10 @@ export const DeanHeader = ({ onToggleMobileSidebar, mobileSidebarOpen, onOpenSea
         <span className="dp-header-center-title">Dean / Academic Administration</span>
       </div>
 
-      {/* Right: Quick Search, Date/Time, Dark Mode, Profile, Logout */}
+      {/* Right: Global Smart Search, Date/Time, Dark Mode, Profile, Logout */}
       <div className="dp-header-right">
-        {/* Global Search Quick Trigger */}
-        <button
-          type="button"
-          className="dp-header-search-trigger"
-          onClick={() => {
-            if (onOpenSearch) onOpenSearch();
-            else navigate('/dean/search');
-          }}
-          title="Search anything (Faculty, Subjects, Rooms, Sections...)"
-        >
-          <Search size={15} />
-          <span>Search...</span>
-          <kbd>⌘K</kbd>
-        </button>
+        {/* Unified Live Academic Smart Search Bar */}
+        <GlobalSmartSearch />
 
         {/* Dynamic 12-Hour Clock */}
         <div className="dp-header-clock" title={`Current Date: ${formattedDate}`}>

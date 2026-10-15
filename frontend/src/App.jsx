@@ -45,6 +45,7 @@ import DeanFreeRoomsPage from './pages/dean/DeanFreeRoomsPage';
 import DeanCurrentStatusPage from './pages/dean/DeanCurrentStatusPage';
 import DeanSearchPage from './pages/dean/DeanSearchPage';
 import DeanFacultyPage from './pages/dean/DeanFacultyPage';
+import DeanFacultyDetailPage from './pages/dean/DeanFacultyDetailPage';
 import DeanSubjectsPage from './pages/dean/DeanSubjectsPage';
 import DeanClassroomsPage from './pages/dean/DeanClassroomsPage';
 import DeanLabsPage from './pages/dean/DeanLabsPage';
@@ -151,6 +152,7 @@ export function App() {
                 <Route path="current-status" element={<DeanCurrentStatusPage />} />
                 <Route path="search" element={<DeanSearchPage />} />
                 <Route path="faculty" element={<DeanFacultyPage />} />
+                <Route path="faculty/:id" element={<DeanFacultyDetailPage />} />
                 <Route path="subjects" element={<DeanSubjectsPage />} />
                 <Route path="classrooms" element={<DeanClassroomsPage />} />
                 <Route path="labs" element={<DeanLabsPage />} />

@@ -36,4 +36,16 @@ router.use('/faculty', facultyPortalRoutes);
 const deanRoutes = require('./deanRoutes');
 router.use('/dean', deanRoutes);
 
+// Unified Academic Smart Search endpoint (for all authenticated roles)
+const deanController = require('../controllers/deanController');
+const authMiddleware = require('../middleware/authMiddleware');
+const roleMiddleware = require('../middleware/roleMiddleware');
+
+router.get(
+  '/search',
+  authMiddleware,
+  roleMiddleware(['ADMIN', 'DEAN', 'FACULTY', 'HOD_FACULTY']),
+  deanController.globalSearch
+);
+
 module.exports = router;

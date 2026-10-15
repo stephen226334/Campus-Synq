@@ -10,7 +10,10 @@ const testFiles = [
   'tests/error_handling.test.js',
   'tests/bulk_delete.test.js',
   'tests/chronological_timetable_sort.test.js',
-  'tests/combined_classes_conflict.test.js'
+  'tests/combined_classes_conflict.test.js',
+  'tests/dynamic_search_and_directory.test.js',
+  'tests/global_smart_search.test.js',
+  'tests/live_dashboard_status.test.js'
 ];
 
 console.log('========================================================');
@@ -31,6 +34,6 @@ for (const file of testFiles) {
 }
 
 console.log('\n========================================================');
-console.log('✔ ALL 9 TEST SUITES PASSED CLEANLY');
+console.log(`✔ ALL ${testFiles.length} TEST SUITES PASSED CLEANLY`);
 console.log('========================================================\n');
 process.exit(0);

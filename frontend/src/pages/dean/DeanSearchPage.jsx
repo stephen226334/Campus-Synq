@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useSearchParams, useOutletContext } from 'react-router-dom';
+import { useSearchParams, useOutletContext, useNavigate } from 'react-router-dom';
 import {
   Search,
   Users,
@@ -22,6 +22,7 @@ export const DeanSearchPage = () => {
   const initialCategory = searchParams.get('category') || 'ALL';
 
   const { openEntityDrawer } = useOutletContext() || {};
+  const navigate = useNavigate();
 
   const [query, setQuery] = useState(initialQuery);
   const [selectedCategory, setSelectedCategory] = useState(initialCategory);
@@ -226,13 +227,15 @@ export const DeanSearchPage = () => {
                     )}
                   </div>
 
-                  {/* View Details Action */}
+                  {/* View Details / Navigate Action */}
                   <button
                     type="button"
-                    className="dp-btn dp-btn-outline dp-btn-sm"
-                    style={{ width: '100%' }}
+                    className="dp-btn dp-btn-primary dp-btn-sm"
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                     onClick={() => {
-                      if (openEntityDrawer) {
+                      if (item.navigationUrl) {
+                        navigate(item.navigationUrl);
+                      } else if (openEntityDrawer) {
                         openEntityDrawer({
                           id: item.id,
                           category: item.category,
@@ -243,7 +246,7 @@ export const DeanSearchPage = () => {
                     }}
                   >
                     <ExternalLink size={14} />
-                    <span>View Details</span>
+                    <span>Open Record</span>
                   </button>
                 </div>
               ))}

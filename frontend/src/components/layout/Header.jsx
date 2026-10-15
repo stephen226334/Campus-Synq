@@ -3,6 +3,7 @@ import { Sun, Moon, LogOut, Menu, User, Shield } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { Link, useNavigate } from 'react-router-dom';
+import GlobalSmartSearch from '../common/GlobalSmartSearch';
 
 export const Header = ({ onToggleSidebar }) => {
   const { user, logout } = useAuth();
@@ -34,6 +35,9 @@ export const Header = ({ onToggleSidebar }) => {
       </div>
 
       <div className="header-right">
+        {/* Unified Global Academic Smart Search */}
+        <GlobalSmartSearch />
+
         {/* Theme Switcher */}
         <button
           type="button"

@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Users, Search, ExternalLink, Mail, Phone, BookOpen, Layers, Loader2 } from 'lucide-react';
 import deanApi from '../../api/dean';
 
 export const DeanFacultyPage = () => {
-  const { openEntityDrawer } = useOutletContext() || {};
+  const navigate = useNavigate();
 
   const [facultyList, setFacultyList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -131,16 +131,8 @@ export const DeanFacultyPage = () => {
                 type="button"
                 className="dp-btn dp-btn-outline dp-btn-sm"
                 style={{ width: '100%' }}
-                onClick={() => {
-                  if (openEntityDrawer) {
-                    openEntityDrawer({
-                      id: f._id,
-                      category: 'FACULTY',
-                      title: f.fullName,
-                      raw: f
-                    });
-                  }
-                }}
+                onClick={() => navigate(`/dean/faculty/${f._id}`)}
+                id={`btn-view-faculty-${f._id}`}
               >
                 <ExternalLink size={14} />
                 <span>View Details</span>

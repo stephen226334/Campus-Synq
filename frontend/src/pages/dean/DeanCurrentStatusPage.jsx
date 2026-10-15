@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useOutletContext } from 'react-router-dom';
 import { 
   Activity, 
@@ -11,25 +11,34 @@ import {
   CheckCircle2, 
   AlertCircle,
   ExternalLink,
-  RefreshCw
+  RefreshCw,
+  Building,
+  Users
 } from 'lucide-react';
 import deanApi from '../../api/dean';
 import { useToast } from '../../context/ToastContext';
 import { formatAcademicSection } from '../../utils/academicFormatter';
+import SearchableDropdown from '../../components/common/SearchableDropdown';
 
 export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
   const { openEntityDrawer } = useOutletContext() || {};
   const inspectEntity = onInspectEntity || openEntityDrawer;
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialQuery = searchParams.get('q') || 'B314';
 
-  const [query, setQuery] = useState(initialQuery);
+  const [entities, setEntities] = useState([]);
+  const [loadingEntities, setLoadingEntities] = useState(true);
+  const [entitiesError, setEntitiesError] = useState(null);
+
+  const initialQuery = searchParams.get('q') || '';
+
+  const [selectedEntityId, setSelectedEntityId] = useState(initialQuery);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [liveClock, setLiveClock] = useState('');
   const { showToast } = useToast();
 
-  const commonQueries = ['B314', 'Prof. Ravi', 'CS-101', 'Subu', 'LAB-01', 'Dr. Kumar'];
+  const activeQueryRef = useRef(selectedEntityId);
+  activeQueryRef.current = selectedEntityId;
 
   // Central live clock in 12-hour format
   useEffect(() => {
@@ -47,10 +56,111 @@ export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
     return () => clearInterval(interval);
   }, []);
 
-  const executeSearch = async (targetQuery = query) => {
+  // 1. Fetch Classrooms, Labs, Auditoriums, and Faculty dynamically from database
+  useEffect(() => {
+    const fetchEntities = async () => {
+      try {
+        setLoadingEntities(true);
+        setEntitiesError(null);
+
+        const [classroomsRes, labsRes, audsRes, facultyRes] = await Promise.all([
+          deanApi.getClassroomList(),
+          deanApi.getLabList(),
+          deanApi.getAuditoriumList(),
+          deanApi.getFacultyList()
+        ]);
+
+        const allList = [];
+
+        // Classrooms
+        (classroomsRes.data || []).forEach((c) => {
+          allList.push({
+            value: c._id,
+            label: `Room ${c.roomNumber}${c.name && c.name !== c.roomNumber ? ` (${c.name})` : ''}`,
+            subLabel: `Classroom • Capacity: ${c.capacity || 60} seats`,
+            badge: 'Classroom',
+            group: 'Classrooms',
+            searchTerms: `${c.roomNumber} ${c.name || ''} Classroom`,
+            type: 'ROOM',
+            raw: c
+          });
+        });
+
+        // Labs
+        (labsRes.data || []).forEach((l) => {
+          allList.push({
+            value: l._id,
+            label: `Lab ${l.labNumber}${l.labName ? ` (${l.labName})` : ''}`,
+            subLabel: `Laboratory • Capacity: ${l.capacity || 40} seats`,
+            badge: 'Lab',
+            group: 'Laboratories',
+            searchTerms: `${l.labNumber} ${l.labName || ''} Lab Laboratory`,
+            type: 'ROOM',
+            raw: l
+          });
+        });
+
+        // Auditoriums
+        (audsRes.data || []).forEach((a) => {
+          allList.push({
+            value: a._id,
+            label: `${a.auditoriumNumber || a.name || 'Auditorium'}`,
+            subLabel: `Auditorium • Capacity: ${a.capacity || 200} seats`,
+            badge: 'Auditorium',
+            group: 'Auditoriums',
+            searchTerms: `${a.auditoriumNumber || ''} ${a.name || ''} Auditorium`,
+            type: 'ROOM',
+            raw: a
+          });
+        });
+
+        // Faculty
+        (facultyRes.data || []).forEach((f) => {
+          allList.push({
+            value: f._id,
+            label: f.fullName,
+            subLabel: `${f.designation || 'Faculty'} • ID: ${f.facultyId || '—'} • ${f.department || 'Computer Science'}`,
+            badge: 'Faculty',
+            group: 'Faculty Members',
+            searchTerms: `${f.fullName} ${f.facultyId || ''} ${f.officialEmail || ''} Faculty`,
+            type: 'FACULTY',
+            raw: f
+          });
+        });
+
+        setEntities(allList);
+
+        if (allList.length > 0) {
+          let matched = null;
+          if (initialQuery) {
+            matched = allList.find(
+              (item) =>
+                item.value === initialQuery ||
+                item.label.toLowerCase().includes(initialQuery.toLowerCase()) ||
+                item.searchTerms.toLowerCase().includes(initialQuery.toLowerCase())
+            );
+          }
+          const defaultItem = matched || allList[0];
+          setSelectedEntityId(defaultItem.value);
+        }
+      } catch (err) {
+        console.error('Failed to load entity directories:', err);
+        setEntitiesError('Unable to load directory records from server');
+      } finally {
+        setLoadingEntities(false);
+      }
+    };
+
+    fetchEntities();
+  }, []);
+
+  // Execute Current Status search
+  const executeSearch = async (targetId = selectedEntityId) => {
+    if (!targetId) return;
+
     try {
       setLoading(true);
-      const res = await deanApi.getCurrentStatusSearch(targetQuery);
+      const res = await deanApi.getCurrentStatusSearch(targetId);
       setData(res.data);
     } catch (err) {
       showToast(err.response?.data?.message || 'Unable to fetch current status', 'error');
@@ -59,12 +169,19 @@ export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
     }
   };
 
+  // Run initial search once default entity is ready
   useEffect(() => {
-    executeSearch(initialQuery);
+    if (selectedEntityId && !data) {
+      executeSearch(selectedEntityId);
+    }
+  }, [selectedEntityId]);
 
-    // Auto-refresh every 30 seconds for live timetable sync
+  // Auto-refresh every 30 seconds for live timetable synchronization
+  useEffect(() => {
     const autoRefreshTimer = setInterval(() => {
-      executeSearch(query);
+      if (activeQueryRef.current) {
+        executeSearch(activeQueryRef.current);
+      }
     }, 30000);
 
     return () => clearInterval(autoRefreshTimer);
@@ -72,9 +189,15 @@ export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    setSearchParams({ q: query });
-    executeSearch();
+    if (!selectedEntityId) {
+      showToast('Please select a room or faculty member', 'warning');
+      return;
+    }
+    setSearchParams({ q: selectedEntityId });
+    executeSearch(selectedEntityId);
   };
+
+  const selectedItem = entities.find((e) => e.value === selectedEntityId);
 
   return (
     <div className="dp-page-container">
@@ -87,7 +210,7 @@ export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
           <div>
             <h1 className="dp-page-title">Current Status</h1>
             <p className="dp-page-subtitle">
-              Check the current status of a classroom or faculty member.
+              Check real-time availability and ongoing classes for any classroom, lab, auditorium, or faculty member.
             </p>
           </div>
         </div>
@@ -102,35 +225,24 @@ export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
       {/* Query Bar */}
       <div className="dp-search-form-card">
         <form onSubmit={handleSubmit} className="dp-status-search-grid">
+          {/* Dynamic Searchable Dropdown */}
           <div className="dp-form-field dp-status-input-field">
-            <label className="dp-form-label" htmlFor="current-status-query">Search Room or Faculty</label>
-            <div className="dp-form-input-wrapper">
-              <Search size={18} className="dp-form-icon" />
-              <input
-                id="current-status-query"
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search room or faculty (e.g. B314, Prof. Ravi)..."
-                required
-              />
-            </div>
-            <div className="dp-quick-tags">
-              {commonQueries.map((q) => (
-                <button
-                  type="button"
-                  key={q}
-                  className={`dp-quick-tag ${query === q ? 'active' : ''}`}
-                  onClick={() => {
-                    setQuery(q);
-                    setSearchParams({ q });
-                    executeSearch(q);
-                  }}
-                >
-                  {q}
-                </button>
-              ))}
-            </div>
+            <SearchableDropdown
+              id="current-status-query"
+              label="Search Room or Faculty"
+              options={entities}
+              value={selectedEntityId}
+              onChange={(val) => {
+                setSelectedEntityId(val);
+                if (val) executeSearch(val);
+              }}
+              placeholder="Search classroom, lab, auditorium, or faculty member..."
+              loading={loadingEntities}
+              loadingText="Loading rooms and faculty..."
+              error={entitiesError}
+              icon={Search}
+              required
+            />
           </div>
 
           <div className="dp-form-field dp-form-actions">
@@ -138,10 +250,10 @@ export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
             <button
               type="submit"
               className="dp-btn-search dp-btn-primary"
-              disabled={loading}
+              disabled={loading || loadingEntities}
               id="btn-search-current-status"
             >
-              <Search size={16} />
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
               <span>{loading ? 'Checking...' : 'Check Status'}</span>
             </button>
           </div>
@@ -157,14 +269,19 @@ export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
           </div>
         ) : data ? (
           data.entityType === 'ROOM' ? (
-            /* Room Status Output */
+            /* Room / Venue Status Output */
             <div className={`dp-status-display-card ${data.status === 'OCCUPIED' ? 'occupied' : 'free'}`}>
               <div className="dp-status-card-header">
                 <div className="dp-status-card-title-meta">
-                  <span className="dp-room-tag">{data.title}</span>
+                  <span className="dp-room-tag">{data.title || selectedItem?.label || 'ROOM'}</span>
+                  {data.roomType && (
+                    <span className="dp-period-badge" style={{ textTransform: 'uppercase', fontSize: '0.75rem' }}>
+                      {data.roomType}
+                    </span>
+                  )}
                   <span className="dp-status-time-stamp">
                     <Clock size={14} />
-                    <span>Checked at {data.currentTime}</span>
+                    <span>Checked at {data.currentTime || liveClock}</span>
                   </span>
                 </div>
                 <div className={`dp-status-live-indicator ${data.status === 'OCCUPIED' ? 'occupied' : 'free'}`}>
@@ -217,18 +334,18 @@ export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
                       className="dp-btn-secondary"
                       onClick={() => {
                         if (inspectEntity) {
+                          const cat = (data.roomType || 'CLASSROOM').toUpperCase();
                           inspectEntity({
-                            category: 'CLASSROOM',
-                            entityType: 'CLASSROOM',
-                            id: data.roomId || data.roomNumber,
-                            title: `Room ${data.roomNumber}`,
+                            category: cat === 'LAB' ? 'LAB' : (cat === 'AUDITORIUM' ? 'AUDITORIUM' : 'CLASSROOM'),
+                            id: data.roomId || data.roomNumber || selectedEntityId,
+                            title: `Room ${data.roomNumber || selectedItem?.label}`,
                             details: data
                           });
                         }
                       }}
                     >
                       <ExternalLink size={14} />
-                      <span>View Room Timetable</span>
+                      <span>View Venue Details</span>
                     </button>
                   </div>
                 </div>
@@ -238,7 +355,7 @@ export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
                     <CheckCircle2 size={24} style={{ color: 'var(--dp-success)' }} />
                     <div>
                       <h4>Available</h4>
-                      <p>No class is currently scheduled.</p>
+                      <p>{data.roomName || data.title || 'This venue'} is currently free. No class is scheduled right now.</p>
                       <div className="dp-next-status-box" style={{ marginTop: '8px' }}>
                         <span className="dp-next-status-label">NEXT:</span>
                         <span className="dp-next-status-val">{data.nextStatusChange}</span>
@@ -251,18 +368,18 @@ export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
                       className="dp-btn-secondary"
                       onClick={() => {
                         if (inspectEntity) {
+                          const cat = (data.roomType || 'CLASSROOM').toUpperCase();
                           inspectEntity({
-                            category: 'CLASSROOM',
-                            entityType: 'CLASSROOM',
-                            id: data.roomId || data.roomNumber,
-                            title: `Room ${data.roomNumber}`,
+                            category: cat === 'LAB' ? 'LAB' : (cat === 'AUDITORIUM' ? 'AUDITORIUM' : 'CLASSROOM'),
+                            id: data.roomId || data.roomNumber || selectedEntityId,
+                            title: `Room ${data.roomNumber || selectedItem?.label}`,
                             details: data
                           });
                         }
                       }}
                     >
                       <ExternalLink size={14} />
-                      <span>View Room Timetable</span>
+                      <span>View Venue Details</span>
                     </button>
                   </div>
                 </div>
@@ -274,9 +391,12 @@ export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
               <div className="dp-status-card-header">
                 <div className="dp-status-card-title-meta">
                   <span className="dp-faculty-title-tag">{data.title}</span>
+                  <span className="dp-period-badge" style={{ textTransform: 'uppercase', fontSize: '0.75rem' }}>
+                    FACULTY
+                  </span>
                   <span className="dp-status-time-stamp">
                     <Clock size={14} />
-                    <span>Checked at {data.currentTime}</span>
+                    <span>Checked at {data.currentTime || liveClock}</span>
                   </span>
                 </div>
                 <div className={`dp-status-live-indicator ${data.status === 'FREE' ? 'free' : 'occupied'}`}>
@@ -291,7 +411,7 @@ export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
                 <div className="dp-status-card-body">
                   <div className="dp-status-details-grid">
                     <div className="dp-status-item">
-                      <span className="dp-status-item-label">ROOM</span>
+                      <span className="dp-status-item-label">VENUE</span>
                       <strong className="dp-status-item-value">{data.room}</strong>
                     </div>
 
@@ -334,7 +454,7 @@ export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
                           inspectEntity({
                             category: 'FACULTY',
                             entityType: 'FACULTY',
-                            id: data.facultyId || data.id || data.title,
+                            id: data.facultyId || selectedEntityId,
                             title: data.title,
                             details: data
                           });
@@ -352,7 +472,7 @@ export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
                     <CheckCircle2 size={24} style={{ color: 'var(--dp-success)' }} />
                     <div>
                       <h4>Available</h4>
-                      <p>No class is currently in progress.</p>
+                      <p>{data.title} has no scheduled class in progress right now.</p>
                       <div className="dp-next-status-box" style={{ marginTop: '8px' }}>
                         <span className="dp-next-status-label">NEXT:</span>
                         <span className="dp-next-status-val">{data.nextStatusChange}</span>
@@ -368,7 +488,7 @@ export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
                           inspectEntity({
                             category: 'FACULTY',
                             entityType: 'FACULTY',
-                            id: data.facultyId || data.id || data.title,
+                            id: data.facultyId || selectedEntityId,
                             title: data.title,
                             details: data
                           });
@@ -385,7 +505,7 @@ export const DeanCurrentStatusPage = ({ onInspectEntity }) => {
           ) : (
             <div className="dp-empty-card">
               <AlertCircle size={28} />
-              <p>{data.message || 'No active record found.'}</p>
+              <p>{data.message || 'No active record found for the selected entity.'}</p>
             </div>
           )
         ) : null}
