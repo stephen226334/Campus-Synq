@@ -64,6 +64,18 @@ const startServer = async () => {
       });
     };
 
+    process.on('uncaughtException', (err) => {
+      console.error('[UNCAUGHT EXCEPTION]:', err);
+    });
+
+    process.on('unhandledRejection', (reason, promise) => {
+      console.error('[UNHANDLED REJECTION]:', reason);
+    });
+
+    process.on('exit', (code) => {
+      console.log(`[PROCESS EXIT]: Process exited with code ${code}`);
+    });
+
     process.on('SIGTERM', shutdown);
     process.on('SIGINT', shutdown);
   } catch (error) {

@@ -181,10 +181,20 @@ const seedFacultyPortalData = async () => {
     ];
 
     const safeSeedEntry = async (query, entryData) => {
-      const existing = await TimetableEntry.findOne(query);
+      let existing = await TimetableEntry.findOne(query);
+      if (!existing && entryData.day && entryData.period && entryData.section && entryData.subject) {
+        existing = await TimetableEntry.findOne({
+          day: entryData.day,
+          period: entryData.period,
+          section: entryData.section,
+          subject: entryData.subject
+        });
+      }
       if (!existing) {
         return await TimetableEntry.create(entryData);
       }
+      Object.assign(existing, entryData);
+      await existing.save();
       return existing;
     };
 

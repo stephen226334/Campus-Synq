@@ -12,6 +12,9 @@ const Semester = require('../models/Semester');
 
 const {
   DAYS_OF_WEEK,
+  ACADEMIC_TIMEZONE,
+  getKolkataAcademicDateTime,
+  normalizeWeekday,
   format12HourTime,
   formatAcademicDate,
   parse12HourTimeToMinutes,
@@ -24,33 +27,40 @@ const {
  * calculateLiveAcademicStatus
  *
  * Single source of truth calculation engine for live classes, room occupancy,
- * and faculty status across Campus Synq.
+ * and faculty status across Campus Synq using Asia/Kolkata academic timezone.
  *
  * @param {Object} options
- * @param {Date} [options.referenceDate=new Date()]
- * @param {string} [options.dayOverride] - Optional day e.g. "Thursday"
+ * @param {Date|string} [options.referenceDate=new Date()]
+ * @param {string} [options.date] - Optional explicit date e.g. "2026-10-15"
+ * @param {string} [options.dayOverride] - Optional day e.g. "Thursday" (case-insensitive)
  * @param {string} [options.timeOverride] - Optional 12h time e.g. "10:15 AM"
  * @returns {Promise<Object>} Unified status object
  */
 const calculateLiveAcademicStatus = async (options = {}) => {
-  const referenceDate = options.referenceDate ? new Date(options.referenceDate) : new Date();
-  const dayOverride = options.dayOverride && options.dayOverride.trim();
-  const timeOverride = options.timeOverride && options.timeOverride.trim();
+  // 1. Resolve date in Asia/Kolkata timezone
+  let targetDate = new Date();
+  if (options.date) {
+    const parsed = new Date(options.date);
+    if (!isNaN(parsed.getTime())) targetDate = parsed;
+  } else if (options.referenceDate) {
+    const parsed = new Date(options.referenceDate);
+    if (!isNaN(parsed.getTime())) targetDate = parsed;
+  }
 
-  const todayDay = dayOverride && DAYS_OF_WEEK.includes(dayOverride)
-    ? dayOverride
-    : DAYS_OF_WEEK[referenceDate.getDay()];
+  const kolkataContext = getKolkataAcademicDateTime(targetDate);
 
-  const todayDateStr = referenceDate.toISOString().split('T')[0];
+  // 2. Resolve weekday (support case-insensitive override or Asia/Kolkata date)
+  const normalizedDayOverride = options.dayOverride ? normalizeWeekday(options.dayOverride) : null;
+  const todayDay = normalizedDayOverride || kolkataContext.weekday;
+  const todayDateStr = kolkataContext.dateStr;
 
-  let currentMinutes;
-  if (timeOverride) {
-    const parsedMinutes = parse12HourTimeToMinutes(timeOverride);
-    currentMinutes = parsedMinutes !== null
-      ? parsedMinutes
-      : referenceDate.getHours() * 60 + referenceDate.getMinutes();
-  } else {
-    currentMinutes = referenceDate.getHours() * 60 + referenceDate.getMinutes();
+  // 3. Resolve current minutes
+  let currentMinutes = kolkataContext.currentMinutes;
+  if (options.timeOverride && typeof options.timeOverride === 'string') {
+    const parsedMinutes = parse12HourTimeToMinutes(options.timeOverride);
+    if (parsedMinutes !== null) {
+      currentMinutes = parsedMinutes;
+    }
   }
 
   // 1. Fetch all periods sorted chronologically
@@ -110,13 +120,20 @@ const calculateLiveAcademicStatus = async (options = {}) => {
       .populate('substituteFaculty', 'fullName facultyId officialEmail designation')
       .populate('originalFaculty', 'fullName facultyId officialEmail designation')
       .lean(),
-    TimetableEntry.find({ day: todayDay, status: 'ACTIVE' })
+    TimetableEntry.find({
+      day: { $regex: new RegExp(`^${todayDay}$`, 'i') },
+      status: 'ACTIVE'
+    })
       .populate('period')
       .populate('subject', 'name code credits type')
       .populate('faculty', 'fullName facultyId officialEmail designation status')
       .populate('substituteFaculty', 'fullName facultyId officialEmail designation status')
       .populate('originalFaculty', 'fullName facultyId officialEmail designation status')
-      .populate('section', 'name capacity')
+      .populate({
+        path: 'section',
+        select: 'name capacity status semester',
+        populate: { path: 'semester', select: 'name academicYear' }
+      })
       .populate('semester', 'name academicYear')
       .lean()
   ]);
@@ -133,7 +150,28 @@ const calculateLiveAcademicStatus = async (options = {}) => {
   });
 
   // 4. Process today's timetable entries and identify live entries
-  const sortedTodayEntries = sortTimetableEntries(todayEntriesRaw);
+  // Defensive deduplication to eliminate duplicate session records while preserving legitimate sessions
+  const sessionMap = new Map();
+  for (const entry of todayEntriesRaw) {
+    const secId = entry.section?._id ? entry.section._id.toString() : (entry.section ? entry.section.toString() : '');
+    const subId = entry.subject?._id ? entry.subject._id.toString() : (entry.subject ? entry.subject.toString() : '');
+    const perId = entry.period?._id ? entry.period._id.toString() : (entry.period ? entry.period.toString() : '');
+    const roomKey = entry.roomId ? entry.roomId.toString() : (entry.roomDetails?.roomNumber || '');
+    const sessionKey = [entry.day, perId, secId, subId, roomKey].join('|');
+
+    if (!sessionMap.has(sessionKey)) {
+      sessionMap.set(sessionKey, entry);
+    } else {
+      const existing = sessionMap.get(sessionKey);
+      const hasSubOrCancel = subMap.has(entry._id?.toString()) || cancelledTimetableIds.has(entry._id?.toString());
+      const existingHasSub = subMap.has(existing._id?.toString()) || cancelledTimetableIds.has(existing._id?.toString());
+      if (hasSubOrCancel && !existingHasSub) {
+        sessionMap.set(sessionKey, entry);
+      }
+    }
+  }
+  const dedupedTodayEntries = Array.from(sessionMap.values());
+  const sortedTodayEntries = sortTimetableEntries(dedupedTodayEntries);
   const liveClasses = [];
   const conflicts = [];
 
@@ -142,15 +180,38 @@ const calculateLiveAcademicStatus = async (options = {}) => {
   const facultyLiveMap = new Map(); // facultyId -> array of live classes
 
   const processedTodaySchedule = sortedTodayEntries.map(entry => {
+    const secDoc = entry.section;
+    const secName = typeof secDoc === 'object' && secDoc ? secDoc.name : (typeof secDoc === 'string' ? secDoc : 'Section');
+    const secId = secDoc?._id ? secDoc._id.toString() : (entry.section ? entry.section.toString() : null);
+    const semName = entry.semester?.name || secDoc?.semester?.name || '';
+    const semId = entry.semester?._id ? entry.semester._id.toString() : (secDoc?.semester?._id ? secDoc.semester._id.toString() : null);
+
+    const subDoc = entry.subject;
+    const subName = typeof subDoc === 'object' && subDoc ? subDoc.name : (typeof subDoc === 'string' ? subDoc : 'Unassigned Subject');
+    const subId = subDoc?._id ? subDoc._id.toString() : (entry.subject ? entry.subject.toString() : null);
+    const subCode = subDoc?.code || '';
+
     if (cancelledTimetableIds.has(entry._id.toString())) {
       return {
-        _id: entry._id,
+        _id: entry._id.toString(),
         day: entry.day,
         period: entry.period?.periodNumber || 'P1',
+        periodOrder: entry.period?.order || 1,
+        startTime: entry.period?.startTime || '',
+        endTime: entry.period?.endTime || '',
         time: `${entry.period?.startTime || ''} - ${entry.period?.endTime || ''}`,
-        subject: entry.subject?.name || 'Class',
-        subjectCode: entry.subject?.code || '',
+        subject: subName,
+        subjectId: subId,
+        subjectCode: subCode,
         faculty: 'Cancelled',
+        facultyId: '',
+        facultyDocId: null,
+        section: secName,
+        sectionId: secId,
+        semester: semName,
+        semesterId: semId,
+        room: entry.roomDetails?.roomNumber || 'Unassigned',
+        roomId: entry.roomId ? entry.roomId.toString() : null,
         status: 'CANCELLED',
         isCancelled: true
       };
@@ -174,18 +235,30 @@ const calculateLiveAcademicStatus = async (options = {}) => {
     const roomIdStr = entry.roomId ? entry.roomId.toString() : null;
     const facultyDocId = effectiveFaculty?._id ? effectiveFaculty._id.toString() : null;
 
+    let sessionStatus = 'COMPLETED';
+    if (isLive) {
+      sessionStatus = 'LIVE';
+    } else if (startM !== null && currentMinutes < startM) {
+      sessionStatus = 'UPCOMING';
+    } else if (endM !== null && currentMinutes >= endM) {
+      sessionStatus = 'COMPLETED';
+    } else if (startM !== null && currentMinutes >= startM) {
+      sessionStatus = 'COMPLETED';
+    }
+
     const classItem = {
-      _id: entry._id,
+      _id: entry._id.toString(),
       day: entry.day,
       period: entry.period?.periodNumber || 'P1',
       periodOrder: entry.period?.order || 1,
       startTime: entry.period?.startTime || '',
       endTime: entry.period?.endTime || '',
       time: `${entry.period?.startTime || ''} - ${entry.period?.endTime || ''}`,
-      subject: entry.subject?.name || 'Unassigned Subject',
-      subjectCode: entry.subject?.code || '',
-      subjectType: entry.subject?.type || 'Theory',
-      credits: entry.subject?.credits || 0,
+      subject: subName,
+      subjectId: subId,
+      subjectCode: subCode,
+      subjectType: subDoc?.type || 'Theory',
+      credits: subDoc?.credits || 0,
       faculty: effectiveFaculty?.fullName || 'Faculty Not Assigned',
       facultyId: effectiveFaculty?.facultyId || '',
       facultyDocId,
@@ -194,14 +267,15 @@ const calculateLiveAcademicStatus = async (options = {}) => {
       isSubstituted,
       substituteFaculty: isSubstituted ? effectiveFaculty?.fullName : null,
       originalFaculty: originalFaculty?.fullName || null,
-      section: entry.section?.name || 'Section',
-      sectionId: entry.section?._id,
-      semester: entry.semester?.name || '',
+      section: secName,
+      sectionId: secId,
+      semester: semName,
+      semesterId: semId,
       room: roomNumber,
-      roomId: entry.roomId,
+      roomId: roomIdStr,
       roomType: entry.roomType || 'Classroom',
       venueName: entry.roomDetails?.name || roomNumber,
-      status: isLive ? 'LIVE' : (startM && currentMinutes < startM ? 'UPCOMING' : 'COMPLETED'),
+      status: sessionStatus,
       minutesRemaining: isLive && endM !== null ? endM - currentMinutes : 0,
       hasConflict: false,
       conflictType: null,
@@ -513,11 +587,15 @@ const calculateLiveAcademicStatus = async (options = {}) => {
   };
 
   return {
-    currentTime12: format12HourTime(referenceDate),
+    currentTime12: options.timeOverride || kolkataContext.time12h,
     currentMinutes,
     todayDay,
     todayDateStr,
-    academicDate: formatAcademicDate(referenceDate),
+    academicDate: {
+      dayName: kolkataContext.dayName,
+      formattedDate: kolkataContext.formattedDate,
+      fullDisplay: kolkataContext.fullDisplay
+    },
     currentPeriod: currentPeriod ? currentPeriod.periodNumber : null,
     currentPeriodTiming: currentPeriod ? `${currentPeriod.startTime} - ${currentPeriod.endTime}` : 'Break / Off Hours',
     nextPeriod: nextPeriod ? nextPeriod.periodNumber : null,

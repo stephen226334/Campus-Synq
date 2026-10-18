@@ -43,22 +43,77 @@ const format12HourTime = (date = new Date()) => {
 };
 
 /**
- * Format Date to readable academic format: "Monday, 05 October 2026"
+ * Academic Timezone Configuration: Asia/Kolkata
  */
-const formatAcademicDate = (date = new Date()) => {
-  const dayName = DAYS_OF_WEEK[date.getDay()];
-  const dayOfMonth = date.getDate().toString().padStart(2, '0');
-  const monthNames = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ];
-  const monthName = monthNames[date.getMonth()];
-  const year = date.getFullYear();
+const ACADEMIC_TIMEZONE = 'Asia/Kolkata';
+
+/**
+ * Get current academic date & time components in Asia/Kolkata timezone
+ */
+const getKolkataAcademicDateTime = (dateInput = new Date()) => {
+  const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: ACADEMIC_TIMEZONE,
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: '2-digit',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+    hour12: false
+  });
+
+  const parts = Object.fromEntries(formatter.formatToParts(date).map(p => [p.type, p.value]));
+  const weekday = parts.weekday;
+  const hour = parseInt(parts.hour, 10);
+  const minute = parseInt(parts.minute, 10);
+  const currentMinutes = hour * 60 + minute;
+  const dayOfMonth = parts.day;
+  const monthName = parts.month;
+  const year = parts.year;
+
+  const monthFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: ACADEMIC_TIMEZONE,
+    month: '2-digit'
+  });
+  const month2Digit = monthFormatter.format(date);
+  const dateStr = `${year}-${month2Digit}-${dayOfMonth}`;
+
+  const h12 = hour % 12 || 12;
+  const ampm = hour >= 12 ? 'PM' : 'AM';
+  const m12 = minute < 10 ? `0${minute}` : minute;
+  const time12h = `${h12}:${m12} ${ampm}`;
 
   return {
-    dayName,
+    weekday,
+    dayName: weekday,
+    dateStr,
+    currentMinutes,
+    time12h,
     formattedDate: `${dayOfMonth} ${monthName} ${year}`,
-    fullDisplay: `${dayName}, ${dayOfMonth} ${monthName} ${year}`
+    fullDisplay: `${weekday}, ${dayOfMonth} ${monthName} ${year}`
+  };
+};
+
+/**
+ * Match weekday with case insensitivity and common abbreviations (e.g. "tuesday", "TUE", "Friday")
+ */
+const normalizeWeekday = (dayStr) => {
+  if (!dayStr || typeof dayStr !== 'string') return null;
+  const cleaned = dayStr.trim().toLowerCase();
+  return DAYS_OF_WEEK.find(d => d.toLowerCase() === cleaned || d.toLowerCase().startsWith(cleaned)) || null;
+};
+
+/**
+ * Format Date to readable academic format in Asia/Kolkata timezone
+ */
+const formatAcademicDate = (date = new Date()) => {
+  const kolkata = getKolkataAcademicDateTime(date);
+  return {
+    dayName: kolkata.dayName,
+    formattedDate: kolkata.formattedDate,
+    fullDisplay: kolkata.fullDisplay
   };
 };
 
@@ -183,6 +238,9 @@ const {
 
 module.exports = {
   DAYS_OF_WEEK,
+  ACADEMIC_TIMEZONE,
+  getKolkataAcademicDateTime,
+  normalizeWeekday,
   parse12HourTimeToMinutes,
   parseTimeToMinutes,
   parsePeriodNumber,

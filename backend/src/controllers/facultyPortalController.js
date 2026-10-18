@@ -519,8 +519,21 @@ const streamEvents = (req, res) => {
   // Send initial ping
   res.write(`event: connected\ndata: ${JSON.stringify({ status: 'connected', time: new Date().toISOString() })}\n\n`);
 
+  const cleanup = () => {
+    academicEvents.removeListener(ACADEMIC_EVENTS.TIMETABLE_UPDATED, onTimetableUpdate);
+    academicEvents.removeListener(ACADEMIC_EVENTS.SUBSTITUTION_UPDATED, onSubstitutionUpdate);
+    academicEvents.removeListener(ACADEMIC_EVENTS.TIMETABLE_CREATED, onTimetableCreate);
+    academicEvents.removeListener(ACADEMIC_EVENTS.TIMETABLE_DELETED, onTimetableDelete);
+  };
+
   const handleUpdate = (eventName) => (data) => {
-    res.write(`event: ${eventName.toLowerCase()}\ndata: ${JSON.stringify(data)}\n\n`);
+    try {
+      if (!res.writableEnded) {
+        res.write(`event: ${eventName.toLowerCase()}\ndata: ${JSON.stringify(data)}\n\n`);
+      }
+    } catch {
+      cleanup();
+    }
   };
 
   const onTimetableUpdate = handleUpdate('timetable_updated');
@@ -533,12 +546,9 @@ const streamEvents = (req, res) => {
   academicEvents.on(ACADEMIC_EVENTS.TIMETABLE_CREATED, onTimetableCreate);
   academicEvents.on(ACADEMIC_EVENTS.TIMETABLE_DELETED, onTimetableDelete);
 
-  req.on('close', () => {
-    academicEvents.removeListener(ACADEMIC_EVENTS.TIMETABLE_UPDATED, onTimetableUpdate);
-    academicEvents.removeListener(ACADEMIC_EVENTS.SUBSTITUTION_UPDATED, onSubstitutionUpdate);
-    academicEvents.removeListener(ACADEMIC_EVENTS.TIMETABLE_CREATED, onTimetableCreate);
-    academicEvents.removeListener(ACADEMIC_EVENTS.TIMETABLE_DELETED, onTimetableDelete);
-  });
+  res.on('error', cleanup);
+  req.on('error', cleanup);
+  req.on('close', cleanup);
 };
 
 module.exports = {
